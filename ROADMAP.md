@@ -19,19 +19,24 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Scaffold static repo (HTML/CSS/JS, no build step)
 - [x] Build single-page lead-gen site with all core sections
 - [x] Add Tally form placeholder + embed instructions
-- [ ] `git init` and first commit *(run locally — see note below)*
+- [x] `git init` and first commit *(done — commit f6a6eb3)*
 - [ ] Serve locally and review on desktop + phone
 - [ ] Sam's first round of feedback → iterate on copy, layout, colors
 - [ ] Replace Tally placeholder with the real embed + test a submission end-to-end
 - [ ] Swap in real product photography (current site uses CDN images we shouldn't hotlink)
 
-## Phase 1 — Go live on Cloudflare Pages
+## Phase 1 — Go live on GitHub Pages
 
-- [ ] Push repo to GitHub
-- [ ] Connect repo to Cloudflare Pages (preset: None, output: `/`)
-- [ ] Verify the preview deploy looks identical to local
-- [ ] Add `thetidytool.com` custom domain + update DNS
-- [ ] Confirm email/MX records are unaffected by the DNS change
+> Chose GitHub Pages over Cloudflare Pages for the simplest migration: keeps DNS at
+> Google, so the Google Workspace MX (`smtp.google.com`) never moves. Only the two web
+> records change. `CNAME` and `.nojekyll` files are committed in the repo root.
+
+- [~] Push repo to GitHub
+- [ ] Enable GitHub Pages (Settings → Pages → deploy from `main`, root `/`)
+- [ ] Verify the `*.github.io` URL looks identical to local
+- [ ] Repoint DNS in Google: apex `A` → GitHub IPs, `www` CNAME → `<user>.github.io`
+- [ ] Confirm email/MX records are unaffected (leave `smtp.google.com` MX + NS untouched)
+- [ ] Confirm HTTPS is issued (GitHub Pages → "Enforce HTTPS")
 - [ ] Cancel Shopify subscription ← biggest recurring-cost win
 
 ## Phase 2 — Harden the lead engine
