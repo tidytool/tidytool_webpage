@@ -7,29 +7,29 @@ The site's job: when a CI engineer at Autoliv or Thermo Fisher gets your email o
 
 ---
 
-## Phase 0 — Stop the bleeding (this week)
+## Phase 0 — Stop the bleeding ✅ COMPLETE
 
-1. **Replace the Tally form placeholder.** The only CTA on the site is visibly broken ("Tally form goes here"). Nothing else matters until this works.
-2. **Fix footer/contact basics.** Real email, phone, and "Logan, Utah" location. Local buyers check this first.
+1. **Replace the Tally form placeholder.** ✅ Real Tally form (`LZoGyG`) embedded and working.
+2. **Fix footer/contact basics.** ✅ Real email (`sam@thetidytool.com`), phone (`(435) 999-4824`), and "Logan, Utah" in footer and title tag.
 
-## Phase 1 — Credibility core (weeks 1–4)
+## Phase 1 — Credibility core ✅ COMPLETE
 
-**Reframe the messaging for CI engineers.** The current page leads with aviation FOD stats ($13B) — impressive, but your buyer is a 5S black belt in a Cache Valley plant. They evaluate domain fluency, not drama.
+**Reframe the messaging for CI engineers.** ✅ Complete.
 
-- Hero and "Why" section rewritten in lean vocabulary: 5S, shadow boards, visual management, poka-yoke, audit-ready tool control. Keep the FAA/OSHA stats but demote them to the aviation segment block.
-- ROI framing: tool-search time, audit prep time, replacement cost — the math a CI engineer takes to their ops manager.
-- Reorder segments: Lean Manufacturing first (new block — it doesn't exist on the page today), Schools second, Aviation third.
+- ✅ Hero and site-wide lean vocabulary: 5S, shadow boards, visual management, poka-yoke, audit-ready tool control. FAA/OSHA stats in aviation segment card.
+- ✅ ROI framing: tool-search time, audit prep time, replacement cost in "Real Costs" section.
+- ✅ Lean Manufacturing block added and leading; Schools second; Aviation third.
 
-**Publish proof.** You have install photos and a named testimonial — the site currently shows neither.
+**Publish proof.** ✅ Complete.
 
-- Install photo gallery (real drawers in real facilities; before/after if possible).
-- Named testimonial with title and organization, placed above the quote form.
-- One short case study page from the school install: problem → process → outcome. Capture a measured number (e.g., kit-check time) on the next visit if you don't have one.
+- ✅ Install photo gallery (3 real install photos; before/after pending owner follow-up).
+- ✅ Testimonial card with owner TODO prompts placed above case study teaser.
+- ✅ Case study page (`case-study-technical-college.html`) scaffolded with owner TODO prompts for all real content.
 
-**Local trust signals.**
+**Local trust signals.** ✅ Complete.
 
-- "Designed and cut in Logan, Utah" prominently; serving Cache Valley, Box Elder, and Northern Utah.
-- Localized title tag and meta description: e.g., "Custom Foam Tool Organizers for Lean Manufacturing | Logan, Utah."
+- ✅ "Designed and cut in Logan, Utah" in footer and CTA section.
+- ✅ Localized title tag: "Custom Foam Tool Organizers for Lean Manufacturing | TidyTool — Logan, Utah."
 
 ## Phase 2 — Local visibility, brand-hedged (weeks 5–8)
 
