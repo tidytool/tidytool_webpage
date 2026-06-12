@@ -9,6 +9,18 @@ A **lead-generation website** for TidyTool — custom, AI-designed, CNC-cut XLPE
 organizers. The site exists to convert visitors into quote requests and notify Sam. It is
 **not** an e-commerce store and should stay simple.
 
+## Repo layout — what gets published
+
+GitHub Pages serves **only the `docs/` folder**. Everything else (CLAUDE.md, ROADMAP.md,
+`planning/`, `prompts/`, README) is internal and must never be moved into `docs/`.
+
+- `docs/` — the live website (index.html, assets/, CNAME). Public.
+- `planning/` — feature specs and internal notes. Not served.
+- `prompts/` — phase implementation prompts. Not served.
+
+Note: the repo itself is public on GitHub, so internal files are still visible there until
+the repo goes private (planned alongside the Cloudflare Pages migration).
+
 ## Prime directives
 
 1. **Keep it simple and dependency-free.** Plain HTML/CSS/JS, no build step, no framework,
@@ -22,7 +34,7 @@ organizers. The site exists to convert visitors into quote requests and notify S
 
 ## House style
 
-- Brand colors and type are CSS variables in `:root` (`assets/css/styles.css`). Re-theme there,
+- Brand colors and type are CSS variables in `:root` (`docs/assets/css/styles.css`). Re-theme there,
   not with scattered inline overrides.
 - Semantic HTML, accessible (alt text, focus states, labelled controls), mobile-first responsive.
 - Keep `main.js` tiny and vanilla. No new libraries without sign-off.

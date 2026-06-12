@@ -57,7 +57,7 @@ Hedge rule: build assets that survive a rename. Hold anything that compounds und
 
 ## Phase 4 — Customer portal: profiles, QR drawer pages, design approval (post-Phase 1, parallel-friendly)
 
-Full spec: `docs/FEATURE-profiles.md`. Free-included with every order — the engraved QR is a referral channel, not a revenue line.
+Full spec: `planning/FEATURE-profiles.md`. Free-included with every order — the engraved QR is a referral channel, not a revenue line.
 
 - **Approval + label entry first (Phase B in spec):** customer reviews the layout, fills "Outline A: ___ … Outline AA: ___" engrave labels (prefilled from our scan), clicks Approve. Timestamped approval row = authorization to cut. This is manufacturing-critical and ships before the public pages.
 - **QR drawer pages (Phase C):** engraved QR → public read-only page (photo, layout, labeled tool list, "Get yours" CTA); owner login to edit labels/reorder.
