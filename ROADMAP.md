@@ -1,78 +1,72 @@
-# TidyTool Website — Roadmap
+# TidyTool Website Roadmap
 
-**Goal:** a simple lead-generation site that excites new leads and pings Sam the moment a
-quote form is filled out. Cheap to run, easy for an AI dev workflow to maintain.
+**Date:** June 12, 2026
+**Direction:** Credibility prop for outbound Cache Valley sales · Lean-manufacturer audience first · Local/regional Utah SEO · Brand-hedged (rebrand undecided)
 
-**Definition of done (the whole project):** visitor lands → understands the value → submits
-the quote form → Sam gets a notification → site stays up and bug-free with light, scheduled
-monitoring.
-
-Legend: `[ ]` todo · `[~]` in progress · `[x]` done
+The site's job: when a CI engineer at Autoliv or Thermo Fisher gets your email or visits after a noon drop-in, the site must confirm you're credible in their world within 30 seconds. It is not a traffic engine yet.
 
 ---
 
-## Phase 0 — Local build & iteration (we are here)
+## Phase 0 — Stop the bleeding (this week)
 
-> Host on Sam's local network, iterate until ready to go public.
+1. **Replace the Tally form placeholder.** The only CTA on the site is visibly broken ("Tally form goes here"). Nothing else matters until this works.
+2. **Fix footer/contact basics.** Real email, phone, and "Logan, Utah" location. Local buyers check this first.
 
-- [x] Extract & curate content from the current Shopify site
-- [x] Scaffold static repo (HTML/CSS/JS, no build step)
-- [x] Build single-page lead-gen site with all core sections
-- [x] Add Tally form placeholder + embed instructions
-- [x] `git init` and first commit *(done — commit f6a6eb3)*
-- [ ] Serve locally and review on desktop + phone
-- [ ] Sam's first round of feedback → iterate on copy, layout, colors
-- [ ] Replace Tally placeholder with the real embed + test a submission end-to-end
-- [ ] Swap in real product photography (current site uses CDN images we shouldn't hotlink)
+## Phase 1 — Credibility core (weeks 1–4)
 
-## Phase 1 — Go live on GitHub Pages
+**Reframe the messaging for CI engineers.** The current page leads with aviation FOD stats ($13B) — impressive, but your buyer is a 5S black belt in a Cache Valley plant. They evaluate domain fluency, not drama.
 
-> Chose GitHub Pages over Cloudflare Pages for the simplest migration: keeps DNS at
-> Google, so the Google Workspace MX (`smtp.google.com`) never moves. Only the two web
-> records change. `CNAME` and `.nojekyll` files are committed in the repo root.
+- Hero and "Why" section rewritten in lean vocabulary: 5S, shadow boards, visual management, poka-yoke, audit-ready tool control. Keep the FAA/OSHA stats but demote them to the aviation segment block.
+- ROI framing: tool-search time, audit prep time, replacement cost — the math a CI engineer takes to their ops manager.
+- Reorder segments: Lean Manufacturing first (new block — it doesn't exist on the page today), Schools second, Aviation third.
 
-- [~] Push repo to GitHub
-- [ ] Enable GitHub Pages (Settings → Pages → deploy from `main`, root `/`)
-- [ ] Verify the `*.github.io` URL looks identical to local
-- [ ] Repoint DNS in Google: apex `A` → GitHub IPs, `www` CNAME → `<user>.github.io`
-- [ ] Confirm email/MX records are unaffected (leave `smtp.google.com` MX + NS untouched)
-- [ ] Confirm HTTPS is issued (GitHub Pages → "Enforce HTTPS")
-- [ ] Cancel Shopify subscription ← biggest recurring-cost win
+**Publish proof.** You have install photos and a named testimonial — the site currently shows neither.
 
-## Phase 2 — Harden the lead engine
+- Install photo gallery (real drawers in real facilities; before/after if possible).
+- Named testimonial with title and organization, placed above the quote form.
+- One short case study page from the school install: problem → process → outcome. Capture a measured number (e.g., kit-check time) on the next visit if you don't have one.
 
-- [ ] Confirm Tally email notifications arrive reliably
-- [ ] Pipe submissions to a Google Sheet (free Tally integration) so leads are owned/backed up
-- [ ] Add basic privacy policy + contact email in the footer
-- [ ] Add lightweight analytics (e.g. Cloudflare Web Analytics — free, privacy-friendly)
+**Local trust signals.**
 
-## Phase 3 — Automated monitoring
+- "Designed and cut in Logan, Utah" prominently; serving Cache Valley, Box Elder, and Northern Utah.
+- Localized title tag and meta description: e.g., "Custom Foam Tool Organizers for Lean Manufacturing | Logan, Utah."
 
-- [ ] Scheduled task: daily/weekly uptime + broken-link + form-reachable check
-- [ ] Alert Sam only when something is broken (no noise)
-- [ ] Optional: weekly digest of new leads + site health
+## Phase 2 — Local visibility, brand-hedged (weeks 5–8)
 
-## Phase 4 — Optional polish (one-off sessions, not always-on)
+Hedge rule: build assets that survive a rename. Hold anything that compounds under the "TidyTool" name.
 
-- [ ] Quarterly competitor / market-comp scan (the "Visionary" pass)
-- [ ] Branding & color refinement pass (the "Designer" pass)
-- [ ] A/B test hero headline + CTA copy for conversion
+**Do now (portable):**
+
+- Google Business Profile under the legal business entity, category "Manufacturer," Logan UT service area. GBP transfers through a rename far better than backlinks do.
+- LocalBusiness schema markup on the site.
+- Segment landing pages: `/lean-manufacturing` and `/schools` — content is brand-neutral and moves with you.
+- On-page SEO for local-intent terms: "custom foam tool organizers Utah," "shadow board foam inserts," "5S tool control foam."
+
+**Defer until rebrand decision:**
+
+- Link building, directory citations, press/PR.
+- Paid brand assets (signage, vehicle, printed collateral beyond what sales needs).
+- Set a decision deadline: **rebrand call by ~September 2026.** Every month undecided is a month of unbuilt domain equity.
+
+## Phase 3 — Depth and inbound groundwork (months 3–6, post-rebrand decision)
+
+- 3–5 brand-neutral resource articles targeting buyer-intent searches: "5S shadow board guide," "XLPE vs Kaizen foam," "FOD prevention tool control," "tool accountability for trade programs." These are the portable SEO assets that later support a national expansion.
+- Quote flow upgrade: photo-upload field, drawer dimensions, tier selector — reduce back-and-forth before the scan visit.
+- Second case study (manufacturer, once one closes).
+- Revisit geography: if inbound quote requests arrive from outside delivery radius, that's the signal to start the national keyword conversation.
 
 ---
 
-## Known roadblocks / watch-list
+## What we are deliberately NOT doing
 
-- **DNS migration** is the fiddly step — protect MX/email records when repointing the domain.
-- **Don't hotlink** the current site's Shopify CDN images; source or shoot our own before launch.
-- **Token budget ($100/mo):** keep the AI workflow to bounded, ticketed tasks + scheduled checks.
-  Avoid always-on multi-agent review loops — they burn budget fast for little gain on a static site.
-- **Never auto-merge to production unattended** — keep a human approval (Sam) on changes; use
-  Cloudflare branch previews to review before promoting.
+- National SEO competition with FoamFit/Kaizen Foam/Shadow Foam — premature.
+- E-commerce/self-serve ordering — your product requires a scan/design step; a form is correct.
+- Blog volume for its own sake — proof pages beat posts at this stage.
+- Backlink campaigns — frozen until the brand name is settled.
 
-## Note on the first commit
+## Success measures (90 days)
 
-This repo is created but not yet under git. From the project folder, run:
-
-```bash
-git init && git add -A && git commit -m "Initial TidyTool lead-gen site"
-```
+- Quote form live and submitting (week 1).
+- Proof section live: gallery + named testimonial + 1 case study (week 4).
+- GBP verified and live (week 8).
+- Qualitative check: does a CI engineer visiting the site see their own vocabulary? Test it on one friendly prospect.
