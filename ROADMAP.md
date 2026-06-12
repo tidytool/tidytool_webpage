@@ -71,7 +71,7 @@ Full spec: `planning/FEATURE-profiles.md`. Free-included with every order — th
 
 These are human tasks that require Sam's direct involvement. They are tracked here so they don't fall through the cracks.
 
-- [ ] **GBP setup:** Follow `gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
+- [ ] **GBP setup:** Follow `planning/gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
 - [ ] **Testimonial:** Fill in the `[TODO]` placeholders on the homepage proof section and the case study page (`case-study-technical-college.html`). Get written permission from your contact before publishing their name and title.
 - [ ] **Rebrand decision deadline:** September 2026. Every month undecided is a month of unbuilt domain equity. Set a calendar reminder. All current Phase 2 assets (GBP, landing pages, schema) are brand-neutral and survive a rename.
 
