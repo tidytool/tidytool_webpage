@@ -15,3 +15,6 @@ dist/
 # Local env / secrets
 .env
 .env.local
+
+# Generated drawer QR assets — regenerable from the DB (drawer.qr_url); not committed
+qr-codes/
