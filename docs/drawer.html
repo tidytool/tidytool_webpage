@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Your Drawer — TidyTool</title>
+  <meta name="description" content="A custom CNC-cut foam tool organizer by TidyTool." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+
+  <style>
+    /* Drawer page — mobile-first; QR scans are ~100% phone traffic. */
+    .drawer-wrap { max-width: 680px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+    .drawer-photo {
+      width: 100%; border-radius: var(--radius); background: var(--c-surface-2);
+      box-shadow: var(--shadow); aspect-ratio: 4 / 3; object-fit: cover;
+    }
+    .drawer-photo--placeholder {
+      display: flex; align-items: center; justify-content: center;
+      color: var(--c-text-dim); font-weight: 600; text-align: center; padding: 2rem;
+    }
+    .drawer-title { margin: 1.25rem 0 .25rem; }
+    .drawer-meta { display: flex; flex-wrap: wrap; gap: .5rem; margin: .25rem 0 1.25rem; }
+    .chip {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: var(--c-surface-2); border: 1px solid var(--c-border);
+      border-radius: 999px; padding: .35rem .85rem; font-size: .85rem;
+      font-weight: 600; color: var(--c-text-dim);
+    }
+    .chip strong { color: var(--c-text); font-weight: 700; }
+    .drawer-cta {
+      margin-top: 1.5rem; padding: 1.5rem; border-radius: var(--radius);
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      box-shadow: var(--shadow); text-align: center;
+    }
+    .drawer-cta h2 { font-size: 1.4rem; margin-bottom: .35rem; }
+    .drawer-cta p { color: var(--c-text-dim); margin-bottom: 1rem; }
+    .state {
+      text-align: center; padding: 3.5rem 1.25rem; color: var(--c-text-dim);
+    }
+    .state h1 { font-size: 1.6rem; color: var(--c-text); }
+    .spinner {
+      width: 34px; height: 34px; margin: 0 auto 1rem;
+      border: 3px solid var(--c-border); border-top-color: var(--c-accent);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/">
+        <img src="/images/logos/tidytool_full_logo.png" alt="TidyTool" class="brand-logo" />
+      </a>
+      <nav class="nav">
+        <a class="btn btn--primary" href="/#quote">Get a Fast Quote</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="drawer-wrap" id="app">
+    <div class="state" id="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading your drawer…</p>
+    </div>
+  </main>
+
+  <script>
+    // --- Supabase REST config (anon / publishable key; read-only, RLS-guarded) ---
+    var SUPABASE_URL = 'https://tkrrvpoupekrjqditupi.supabase.co';
+    // Public anon key — safe to ship in page source; read access is bounded by RLS.
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrcnJ2cG91cGVrcmpxZGl0dXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0OTk1NTIsImV4cCI6MjA2OTA3NTU1Mn0.u9EOKNXOM9ektWTwwL-zjlgE4N4SsRv1V6xv7k68gtQ';
+
+    // Human-friendly labels for the drawer status enum.
+    var STATUS_LABELS = {
+      backlogged_by_admin:     'Queued',
+      created_by_user:         'Scan received',
+      received_by_tidydesk:    'Received',
+      processed_by_tidydesk:   'In design',
+      approved_by_qualityctrl: 'Approved',
+      received_by_fabricator:  'In fabrication'
+    };
+
+    var app = document.getElementById('app');
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+
+    function formatDimensions(dim) {
+      if (!dim) return null;
+      try { if (typeof dim === 'string') dim = JSON.parse(dim); } catch (e) { return null; }
+      if (typeof dim !== 'object') return null;
+      var pick = function (k) { return dim[k] != null ? dim[k] : null; };
+      var w = pick('width'), l = pick('length') != null ? pick('length') : pick('depth') != null ? pick('depth') : pick('height');
+      if (w != null && l != null) return w + ' × ' + l;
+      var parts = Object.keys(dim).map(function (k) { return k + ': ' + dim[k]; });
+      return parts.length ? parts.join(' · ') : null;
+    }
+
+    function renderState(title, msg) {
+      app.innerHTML =
+        '<div class="state"><h1>' + esc(title) + '</h1><p>' + esc(msg) + '</p>' +
+        '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="/#quote">Get your own →</a></p></div>';
+    }
+
+    function renderDrawer(d) {
+      var name = d.nickname || 'Your TidyTool drawer';
+      var statusLabel = d.status ? (STATUS_LABELS[d.status] || d.status) : null;
+      var dims = formatDimensions(d.dimensions);
+
+      var photo = d.photo_url
+        ? '<img class="drawer-photo" src="' + esc(d.photo_url) + '" alt="' + esc(name) + '" />'
+        : '<div class="drawer-photo drawer-photo--placeholder">Photo coming soon</div>';
+
+      var chips = '';
+      if (dims) chips += '<span class="chip">Size <strong>' + esc(dims) + '</strong></span>';
+      if (statusLabel) chips += '<span class="chip">Status <strong>' + esc(statusLabel) + '</strong></span>';
+
+      app.innerHTML =
+        photo +
+        '<h1 class="drawer-title">' + esc(name) + '</h1>' +
+        (chips ? '<div class="drawer-meta">' + chips + '</div>' : '') +
+        '<div class="drawer-cta">' +
+          '<h2>Want one for your tools?</h2>' +
+          '<p>This is a custom CNC-cut foam organizer, designed for an exact set of tools. We can build yours.</p>' +
+          '<a class="btn btn--primary" href="/#quote">Get a Fast Quote →</a>' +
+        '</div>';
+    }
+
+    function loadDrawer() {
+      var id = new URLSearchParams(window.location.search).get('d');
+      if (!id) { renderState('Drawer not found', 'This link is missing a drawer code.'); return; }
+
+      var url = SUPABASE_URL + '/rest/v1/drawer'
+        + '?id=eq.' + encodeURIComponent(id)
+        + '&select=nickname,photo_url,dimensions,status';
+
+      fetch(url, {
+        headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
+      })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (rows) {
+        if (!rows || !rows.length) {
+          renderState('Drawer not found', 'We couldn’t find a drawer for this code.');
+          return;
+        }
+        renderDrawer(rows[0]);
+      })
+      .catch(function () {
+        renderState('Something went wrong', 'We couldn’t load this drawer right now. Please try again later.');
+      });
+    }
+
+    loadDrawer();
+  </script>
+</body>
+</html>

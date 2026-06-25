@@ -127,9 +127,9 @@ Out of scope for MVP: drag-and-drop layout editing. The layout is a static image
 - [ ] B3. Lock-on-approve + snapshot logic; "request changes" path (status back to `design`).
 
 ### Phase C — QR drawer pages
-- [ ] C1. `q/` redirect layer + `drawer.html` public view (photo, layout, labeled tool list, "Get yours" CTA).
+- [x] C1. `q/` redirect layer + `drawer.html` public view — **shipped 2026-06-24 (awaiting deploy).** Photo, nickname, size/status chips, "Get a Fast Quote" CTA. Labeled tool list omitted — no item data exists yet (see reconciliation note).
 - [ ] C2. Owner mode: edit labels/notes post-delivery (does not touch locked manufacturing snapshot), reorder button → pre-filled quote form.
-- [ ] C3. Decide + document the engraved domain (rebrand hedge above) **before the first QR is cut.**
+- [x] C3. Engraved domain decided: **`thetidytool.com`**, retained through any migration/rebrand. URL contract: `https://www.thetidytool.com/q/?d={drawer_id}`.
 
 ### Phase D — Account page (cheap once A–C exist)
 - [ ] D1. `account.html`: project list, statuses, pending-approval badge, links to drawer pages.
@@ -145,6 +145,18 @@ Out of scope for MVP: drag-and-drop layout editing. The layout is a static image
 - No frameworks; `supabase-js` via CDN is the only new dependency (flagging per house rules — needs Sam's sign-off).
 - Portal stays off the conversion path: an `account.html` link in the footer, nothing more.
 - RLS verified by testing as anon + as a second customer before anything ships.
+
+## Reconciliation with live backend (2026-06-24)
+
+Inspected the real Supabase project (`tidytool`, ref `tkrrvpoupekrjqditupi`). The spec above predates seeing the schema tidyCAM actually created; key differences:
+
+- **tidyCAM owns ingestion.** The mobile app already writes `order` + `drawer` rows and uploads scan assets, and ties a drawer to its order/customer at creation. Spec Phase A3/A4 (processing script, auth provisioning, separate `qr_token`) are **not ours to build**.
+- **Real `drawer` columns:** `id` (uuid, PK), `order_id` → `order`, `nickname`, `dimensions` (json), `status` (enum `drawer_status`: backlogged_by_admin → created_by_user → received_by_tidydesk → processed_by_tidydesk → approved_by_qualityctrl → received_by_fabricator), `photo_url`, `dxf_url`, `point_cloud_url`, `created_by`. **No `qr_token`, no `is_public`, no `drawer_items`/labels table.**
+- **Token = the drawer `id`** (uuid is already unguessable). No new column, no app change.
+- **Storage:** buckets `drawer-assets` and `lidar_scans`, both **public** — so `photo_url` renders directly in an `<img>`.
+- **No `supabase-js`.** Page reads via plain `fetch` to the PostgREST endpoint with the anon key. The site stays truly dependency-free (better than the spec's CDN plan).
+- **Deferred — tool labels / approval flow (Phase B).** No per-tool item data exists yet; revisit once tidyCAM emits tool names. The whole `approve.html` / label-lock / snapshot machinery waits on that.
+- **Security debt accepted for MVP.** `drawer` and `employee` carry permissive `"Enable read access for all users"` policies (anon can read all rows/columns). Shipped as-is per owner decision; hardening tracked in `ROADMAP.md` → Owner Action Items. `order`/`customer` are not anon-readable, so customer PII is not exposed.
 
 ## Open questions
 

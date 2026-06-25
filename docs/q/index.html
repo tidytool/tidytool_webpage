@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>TidyTool — Drawer</title>
+  <!--
+    Permanent QR redirect layer.
+    Engrave QR codes pointing at:  https://www.thetidytool.com/q/?d={drawer_id}
+    This thin file is the ONLY thing that must survive a hosting move or rebrand.
+    It forwards to the real drawer page, which can evolve freely over time.
+  -->
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      // Accept ?d={id}, or a bare query/hash token as a fallback.
+      var token = params.get('d')
+        || (window.location.search || '').replace(/^\?/, '')
+        || (window.location.hash || '').replace(/^#/, '');
+      var dest = token
+        ? '/drawer.html?d=' + encodeURIComponent(token)
+        : '/'; // no token -> send to homepage
+      window.location.replace(dest);
+    })();
+  </script>
+</head>
+<body>
+  <noscript>
+    Open this drawer at <a href="/">thetidytool.com</a>.
+  </noscript>
+</body>
+</html>

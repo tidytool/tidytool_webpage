@@ -59,10 +59,10 @@ Hedge rule: build assets that survive a rename. Hold anything that compounds und
 
 Full spec: `planning/FEATURE-profiles.md`. Free-included with every order — the engraved QR is a referral channel, not a revenue line.
 
-- **Approval + label entry first (Phase B in spec):** customer reviews the layout, fills "Outline A: ___ … Outline AA: ___" engrave labels (prefilled from our scan), clicks Approve. Timestamped approval row = authorization to cut. This is manufacturing-critical and ships before the public pages.
-- **QR drawer pages (Phase C):** engraved QR → public read-only page (photo, layout, labeled tool list, "Get yours" CTA); owner login to edit labels/reorder.
-- **Stack:** static pages + `supabase-js` CDN + Supabase RLS/Auth/Storage. No framework, no build step.
-- **Rebrand dependency:** do not engrave QR URLs until the domain question is settled (rebrand call, ~Sept 2026) or a neutral redirect domain is registered. Engraved URLs must survive a rename.
+- ✅ **QR drawer page MVP (spec Phase C1) — shipped 2026-06-24, awaiting deploy.** `docs/q/index.html` (permanent redirect layer) + `docs/drawer.html` (public read-only page: photo, nickname, size/status chips, "Get a Fast Quote" CTA). Reads the live Supabase `drawer` table by `id` via plain `fetch` + the anon key — **no `supabase-js`, no framework, no build step.** Mobile-first.
+- **Scope reconciled with the real backend.** tidyCAM (the mobile app) already writes orders + drawers + scans to Supabase, so the spec's ingestion/auth-provisioning half is not ours to build. The real `drawer` table has no per-tool item list and no engrave labels yet, so the **approval + label-entry flow (spec Phase B) is deferred** until tidyCAM produces tool names.
+- **QR URL contract (permanent):** engrave `https://www.thetidytool.com/q/?d={drawer_id}`. Uses the drawer's existing `id` (uuid) as the token — no schema change, no tidyCAM change. Domain decided: stay on `thetidytool.com` through any migration/rebrand.
+- **Next (spec Phase C2/D):** owner login to edit labels/reorder; `account.html` order list. Blocked on the label feature above.
 - Explicitly NOT in this phase: drag-and-drop layout editor, customer photo uploads, shop/fleet inventory (the future paid B2B tier).
 
 ---
@@ -74,6 +74,10 @@ These are human tasks that require Sam's direct involvement. They are tracked he
 - [ ] **GBP setup:** Follow `planning/gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
 - [ ] **Testimonial:** Fill in the `[TODO]` placeholders on the homepage proof section and the case study page (`case-study-technical-college.html`). Get written permission from your contact before publishing their name and title.
 - [ ] **Rebrand decision deadline:** September 2026. Every month undecided is a month of unbuilt domain equity. Set a calendar reminder. All current Phase 2 assets (GBP, landing pages, schema) are brand-neutral and survive a rename.
+- [ ] **Supabase database hardening (security debt, deferred 2026-06-24).** The QR drawer page ships against intentionally permissive read policies. Before scaling QR usage, tighten:
+  - `drawer` table has a `"Enable read access for all users"` policy (anon SELECT, `qual = true`) — the anon key can read **every column of every drawer**, including internal fields (`created_by`, `order_id`, `dxf_url`, `point_cloud_url`). Replace with a `SECURITY DEFINER` function `get_public_drawer(id)` returning only public-safe fields (`nickname`, `photo_url`, `dimensions`, `status`), then drop the blanket policy. (Won't break tidyCAM — the app reads as the authenticated owner.)
+  - `employee` table has the same `"Enable read access for all users"` policy — anon can read employee names, phones, catchphrases. Remove/restrict; unrelated to the QR feature but a live PII exposure.
+  - Re-verify after changes: anon can still read a drawer by `id`, but cannot list all drawers, read internal columns, or read the `employee`/`order`/`customer` tables.
 
 ---
 
