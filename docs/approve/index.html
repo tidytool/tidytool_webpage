@@ -87,6 +87,22 @@
     }
     .badge--approved { background: #e7f6ec; color: #1e7e45; border: 1px solid #b6e3c5; }
     .badge--changes  { background: #fdeede; color: #a85c12; border: 1px solid #f3cf9e; }
+
+    /* Changelog / history */
+    .history { max-width: 680px; margin: 1.5rem auto 0; }
+    .history details {
+      border: 1px solid var(--c-border); border-radius: var(--radius);
+      background: var(--c-surface); box-shadow: var(--shadow);
+    }
+    .history summary { cursor: pointer; padding: .85rem 1rem; font-weight: 700; }
+    .timeline { list-style: none; margin: 0; padding: 0 1rem 1rem; }
+    .timeline li { padding: .7rem 0; border-top: 1px solid var(--c-border); }
+    .tl-top { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+    .tl-type { font-weight: 700; }
+    .tl-date { color: var(--c-text-dim); font-size: .85rem; }
+    .tl-who { color: var(--c-text-dim); font-size: .9rem; margin-top: .15rem; }
+    .tl-note { margin: .35rem 0 0; font-style: italic; color: var(--c-text); }
+    .tl-link { font-size: .85rem; }
   </style>
 </head>
 <body>
@@ -148,24 +164,76 @@
     function renderState(title, msg) {
       app.innerHTML =
         '<div class="state"><h1>' + esc(title) + '</h1><p>' + esc(msg) + '</p>' +
-        '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="/">Back to TidyTool →</a></p></div>';
+        '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="https://thetidytool.com/">Back to TidyTool →</a></p></div>';
     }
 
-    function renderAlreadyDecided(d) {
-      var approved = d.customer_approval_status === 'approved';
-      var when = d.approved_at ? new Date(d.approved_at).toLocaleDateString(undefined,
+    var HOME = 'https://thetidytool.com/';
+
+    function decisionScreen(decision, name, whenIso) {
+      var approved = decision === 'approved';
+      var when = whenIso ? new Date(whenIso).toLocaleDateString(undefined,
         { year:'numeric', month:'long', day:'numeric' }) : null;
       app.innerHTML =
         '<div class="state">' +
           '<div class="result-icon">' + (approved ? '✅' : '✏️') + '</div>' +
           '<h1>' + (approved ? 'Design approved' : 'Changes requested') + '</h1>' +
-          (d.approved_by ? '<p>Signed by <strong>' + esc(d.approved_by) + '</strong>' +
+          (name ? '<p>' + (approved ? 'Signed' : 'Requested') + ' by <strong>' + esc(name) + '</strong>' +
             (when ? ' on ' + esc(when) : '') + '.</p>' : '') +
           (approved
             ? '<p>Thanks — we’ve got your sign-off and we’ll start fabrication.</p>'
-            : '<p>Thanks — we’ve logged your change request and will be in touch.</p>') +
-          '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="/">Back to TidyTool →</a></p>' +
-        '</div>';
+            : '<p>Thanks — we’ve logged your change request and we’ll follow up with a revised design.</p>') +
+          '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="' + HOME + '">Back to TidyTool →</a></p>' +
+          (approved
+            ? '<div style="margin-top:1.25rem;">' +
+                '<button class="btn btn--ghost" id="reopenBtn" type="button">Need a change? Request changes</button>' +
+                '<div class="changes-box" id="reopenBox" style="max-width:520px;margin:1rem auto 0;text-align:left;">' +
+                  '<div class="field"><label for="reopenName">Your name</label>' +
+                    '<input type="text" id="reopenName" autocomplete="name" placeholder="e.g. Jordan Smith" value="' + esc(name || '') + '" /></div>' +
+                  '<div class="field"><label for="reopenNote">What needs to change?</label>' +
+                    '<textarea id="reopenNote" placeholder="Tell us what to adjust…"></textarea></div>' +
+                  '<button class="btn btn--primary btn--block" id="reopenSend">Send change request</button>' +
+                  '<p class="err" id="reopenErr" role="alert"></p>' +
+                '</div>' +
+              '</div>'
+            : '') +
+        '</div>' +
+        '<div id="history" class="history"></div>';
+      if (approved) wireReopen();
+      loadHistory();
+    }
+
+    function wireReopen() {
+      var btn = document.getElementById('reopenBtn');
+      var box = document.getElementById('reopenBox');
+      var send = document.getElementById('reopenSend');
+      var nameEl = document.getElementById('reopenName');
+      var noteEl = document.getElementById('reopenNote');
+      var errEl = document.getElementById('reopenErr');
+
+      btn.addEventListener('click', function () {
+        box.classList.toggle('open');
+        btn.textContent = box.classList.contains('open')
+          ? 'Never mind — keep it approved' : 'Need a change? Request changes';
+      });
+
+      send.addEventListener('click', function () {
+        var nm = (nameEl.value || '').trim();
+        var nt = (noteEl.value || '').trim();
+        errEl.textContent = '';
+        if (!nm) { errEl.textContent = 'Please enter your name.'; nameEl.focus(); return; }
+        if (!nt) { errEl.textContent = 'Please tell us what needs to change.'; noteEl.focus(); return; }
+        var lbl = send.textContent; send.disabled = true; send.textContent = 'Sending…';
+        rpc('submit_drawer_approval', { p_id: drawerId, p_name: nm, p_decision: 'changes_requested', p_note: nt })
+          .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+          .then(function (res) {
+            if (!res.ok) { throw new Error((res.body && (res.body.message || res.body.hint)) || 'Something went wrong. Please try again.'); }
+            decisionScreen('changes_requested', nm, null); window.scrollTo(0, 0);
+          })
+          .catch(function (e) {
+            errEl.textContent = e.message || 'Something went wrong. Please try again.';
+            send.disabled = false; send.textContent = lbl;
+          });
+      });
     }
 
     function renderApprove(d) {
@@ -187,11 +255,16 @@
       if (dims) chips += '<span class="chip">Size <strong>' + esc(dims) + '</strong></span>';
       chips += '<span class="chip">Status <strong>Awaiting your approval</strong></span>';
 
+      var reopenedNote = d.customer_approval_status === 'changes_requested'
+        ? '<p style="color:var(--c-accent);font-weight:600;">You previously requested changes. Review the updated layout below and approve when it looks right.</p>'
+        : '';
+
       app.innerHTML =
         '<div class="approve-head">' +
           '<p class="eyebrow">Design review</p>' +
           '<h1>' + esc(name) + '</h1>' +
           '<p>Review the proposed layout below. When it looks right, add your name and approve — that’s our go-ahead to cut.</p>' +
+          reopenedNote +
         '</div>' +
         preview + dxfLink +
         '<div class="meta">' + chips + '</div>' +
@@ -215,9 +288,50 @@
             '<button class="btn btn--primary btn--block" id="changesBtn">Send change request</button>' +
           '</div>' +
           '<p class="err" id="err" role="alert"></p>' +
-        '</div>';
+        '</div>' +
+        '<div id="history" class="history"></div>';
 
       wireApprove(d);
+      loadHistory();
+    }
+
+    var EVENT_LABELS = {
+      design_uploaded:   'Design uploaded',
+      design_revised:    'Design updated',
+      approved:          'Approved',
+      changes_requested: 'Changes requested'
+    };
+
+    function loadHistory() {
+      var box = document.getElementById('history');
+      if (!box || !drawerId) return;
+      rpc('get_drawer_changelog', { p_drawer_id: drawerId })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (events) {
+          if (!events || !events.length) { box.innerHTML = ''; return; }
+          var items = events.map(function (e) {
+            var label = EVENT_LABELS[e.event_type] || e.event_type;
+            var when = e.created_at ? new Date(e.created_at).toLocaleDateString(undefined,
+              { year:'numeric', month:'short', day:'numeric' }) : '';
+            var isDesign = e.event_type === 'design_uploaded' || e.event_type === 'design_revised';
+            var rev = (isDesign && e.revision != null) ? ' (rev ' + e.revision + ')' : '';
+            var who = e.actor_name ? esc(e.actor_name) : (e.actor_role === 'staff' ? 'TidyTool' : '');
+            var link = (isDesign && e.preview_url)
+              ? '<div><a class="tl-link" href="' + esc(e.preview_url) + '" target="_blank" rel="noopener">view image →</a></div>'
+              : '';
+            return '<li>' +
+                '<div class="tl-top"><span class="tl-type">' + esc(label) + rev + '</span>' +
+                  '<span class="tl-date">' + esc(when) + '</span></div>' +
+                (who ? '<div class="tl-who">' + who + '</div>' : '') +
+                (e.note ? '<p class="tl-note">“' + esc(e.note) + '”</p>' : '') +
+                link +
+              '</li>';
+          }).join('');
+          box.innerHTML =
+            '<details><summary>History (' + events.length + ')</summary>' +
+            '<ul class="timeline">' + items + '</ul></details>';
+        })
+        .catch(function () { box.innerHTML = ''; });
     }
 
     function wireApprove(d) {
@@ -265,12 +379,7 @@
             var msg = (res.body && (res.body.message || res.body.hint)) || 'Something went wrong. Please try again.';
             throw new Error(msg);
           }
-          renderApprove; // no-op to keep reference
-          renderAlreadyDecided({
-            customer_approval_status: decision,
-            approved_by: nm,
-            approved_at: decision === 'approved' ? new Date().toISOString() : null
-          });
+          decisionScreen(decision, nm, decision === 'approved' ? new Date().toISOString() : null);
           window.scrollTo(0, 0);
         })
         .catch(function (e) {
@@ -292,7 +401,7 @@
         .then(function (rows) {
           var d = Array.isArray(rows) ? rows[0] : rows;
           if (!d) { renderState('Design not found', 'We couldn’t find a design for this link.'); return; }
-          if (d.customer_approval_status === 'approved') { renderAlreadyDecided(d); return; }
+          if (d.customer_approval_status === 'approved') { decisionScreen('approved', d.approved_by, d.approved_at); return; }
           renderApprove(d);
         })
         .catch(function () {
