@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Approve Your Design — TidyTool</title>
+  <meta name="description" content="Review and approve your custom CNC-cut foam tool organizer design." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    /* Approval page — mobile-first; client reviews on a phone. */
+    .approve-wrap { max-width: 680px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+
+    .approve-head { margin: .5rem 0 1rem; }
+    .approve-head h1 { font-size: 1.5rem; margin: .25rem 0 .35rem; }
+    .approve-head p { color: var(--c-text-dim); margin: 0; }
+
+    .design-frame {
+      position: relative; width: 100%; border-radius: var(--radius);
+      background: var(--c-surface-2); border: 1px solid var(--c-border);
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .design-img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+    .design-frame.zoomed .design-img { cursor: zoom-out; }
+    .design-placeholder {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 220px; color: var(--c-text-dim); font-weight: 600; text-align: center; padding: 2rem;
+    }
+    .design-hint { font-size: .8rem; color: var(--c-text-dim); text-align: center; margin: .5rem 0 0; }
+    .design-actions { margin: .65rem 0 0; text-align: center; }
+    .design-actions a { font-size: .85rem; color: var(--c-text-dim); }
+
+    .meta { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0 0; }
+    .chip {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: var(--c-surface-2); border: 1px solid var(--c-border);
+      border-radius: 999px; padding: .35rem .85rem; font-size: .85rem;
+      font-weight: 600; color: var(--c-text-dim);
+    }
+    .chip strong { color: var(--c-text); font-weight: 700; }
+
+    .panel {
+      margin-top: 1.5rem; padding: 1.5rem; border-radius: var(--radius);
+      background: var(--c-surface); border: 1px solid var(--c-border); box-shadow: var(--shadow);
+    }
+    .panel h2 { font-size: 1.2rem; margin: 0 0 .35rem; }
+    .panel p.sub { color: var(--c-text-dim); margin: 0 0 1.1rem; font-size: .95rem; }
+
+    .field { margin-bottom: 1rem; }
+    .field label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .35rem; }
+    .field input[type="text"], .field textarea {
+      width: 100%; box-sizing: border-box; padding: .7rem .8rem;
+      border: 1px solid var(--c-border); border-radius: var(--radius);
+      font: inherit; background: var(--c-bg); color: var(--c-text);
+    }
+    .field input:focus, .field textarea:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+    .field textarea { min-height: 84px; resize: vertical; }
+
+    .btn-row { display: flex; flex-direction: column; gap: .6rem; margin-top: .25rem; }
+    .btn--block { width: 100%; justify-content: center; }
+    .btn--ghost {
+      background: transparent; color: var(--c-text); border: 1px solid var(--c-border);
+    }
+    .changes-box { display: none; margin-top: .25rem; }
+    .changes-box.open { display: block; }
+
+    .err { color: #c0392b; font-size: .88rem; margin: .5rem 0 0; min-height: 1.1em; }
+
+    .state { text-align: center; padding: 3.5rem 1.25rem; color: var(--c-text-dim); }
+    .state h1 { font-size: 1.6rem; color: var(--c-text); }
+    .spinner {
+      width: 34px; height: 34px; margin: 0 auto 1rem;
+      border: 3px solid var(--c-border); border-top-color: var(--c-accent);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .result-icon { font-size: 2.4rem; line-height: 1; margin-bottom: .5rem; }
+    .badge {
+      display: inline-block; padding: .3rem .8rem; border-radius: 999px;
+      font-size: .8rem; font-weight: 700; letter-spacing: .02em;
+    }
+    .badge--approved { background: #e7f6ec; color: #1e7e45; border: 1px solid #b6e3c5; }
+    .badge--changes  { background: #fdeede; color: #a85c12; border: 1px solid #f3cf9e; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/">
+        <img src="/images/logos/tidytool_full_logo.png" alt="TidyTool" class="brand-logo" />
+      </a>
+      <nav class="nav">
+        <a class="btn btn--primary" href="/#quote">Get a Fast Quote</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="approve-wrap" id="app">
+    <div class="state" id="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading your design…</p>
+    </div>
+  </main>
+
+  <script>
+    // --- Supabase REST config (anon/publishable key; all writes go through RLS-guarded RPCs) ---
+    var SUPABASE_URL = 'https://tkrrvpoupekrjqditupi.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrcnJ2cG91cGVrcmpxZGl0dXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0OTk1NTIsImV4cCI6MjA2OTA3NTU1Mn0.u9EOKNXOM9ektWTwwL-zjlgE4N4SsRv1V6xv7k68gtQ';
+
+    var app = document.getElementById('app');
+    var drawerId = new URLSearchParams(window.location.search).get('id');
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      });
+    }
+
+    function rpc(fn, args) {
+      return fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: 'Bearer ' + SUPABASE_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(args || {})
+      });
+    }
+
+    function formatDimensions(dim) {
+      if (!dim) return null;
+      try { if (typeof dim === 'string') dim = JSON.parse(dim); } catch (e) { return null; }
+      if (typeof dim !== 'object') return null;
+      var u = dim.units ? ' ' + dim.units : '';
+      var w = dim.width, l = dim.length != null ? dim.length : (dim.depth != null ? dim.depth : dim.height);
+      if (w != null && l != null) return w + ' × ' + l + u;
+      var parts = Object.keys(dim).map(function (k) { return k + ': ' + dim[k]; });
+      return parts.length ? parts.join(' · ') : null;
+    }
+
+    function renderState(title, msg) {
+      app.innerHTML =
+        '<div class="state"><h1>' + esc(title) + '</h1><p>' + esc(msg) + '</p>' +
+        '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="/">Back to TidyTool →</a></p></div>';
+    }
+
+    function renderAlreadyDecided(d) {
+      var approved = d.customer_approval_status === 'approved';
+      var when = d.approved_at ? new Date(d.approved_at).toLocaleDateString(undefined,
+        { year:'numeric', month:'long', day:'numeric' }) : null;
+      app.innerHTML =
+        '<div class="state">' +
+          '<div class="result-icon">' + (approved ? '✅' : '✏️') + '</div>' +
+          '<h1>' + (approved ? 'Design approved' : 'Changes requested') + '</h1>' +
+          (d.approved_by ? '<p>Signed by <strong>' + esc(d.approved_by) + '</strong>' +
+            (when ? ' on ' + esc(when) : '') + '.</p>' : '') +
+          (approved
+            ? '<p>Thanks — we’ve got your sign-off and we’ll start fabrication.</p>'
+            : '<p>Thanks — we’ve logged your change request and will be in touch.</p>') +
+          '<p style="margin-top:1.5rem;"><a class="btn btn--primary" href="/">Back to TidyTool →</a></p>' +
+        '</div>';
+    }
+
+    function renderApprove(d) {
+      var name = d.nickname || 'Your TidyTool design';
+      var dims = formatDimensions(d.dimensions);
+
+      var preview = d.design_preview_url
+        ? '<div class="design-frame" id="frame">' +
+            '<img class="design-img" id="designImg" src="' + esc(d.design_preview_url) + '" alt="Proposed layout for ' + esc(name) + '" />' +
+          '</div>' +
+          '<p class="design-hint">Tap the image to zoom. Check every tool pocket before you approve.</p>'
+        : '<div class="design-frame"><div class="design-placeholder">Design preview coming soon</div></div>';
+
+      var dxfLink = d.dxf_url
+        ? '<div class="design-actions"><a href="' + esc(d.dxf_url) + '" target="_blank" rel="noopener">Download the CAD file (DXF) ↓</a></div>'
+        : '';
+
+      var chips = '';
+      if (dims) chips += '<span class="chip">Size <strong>' + esc(dims) + '</strong></span>';
+      chips += '<span class="chip">Status <strong>Awaiting your approval</strong></span>';
+
+      app.innerHTML =
+        '<div class="approve-head">' +
+          '<p class="eyebrow">Design review</p>' +
+          '<h1>' + esc(name) + '</h1>' +
+          '<p>Review the proposed layout below. When it looks right, add your name and approve — that’s our go-ahead to cut.</p>' +
+        '</div>' +
+        preview + dxfLink +
+        '<div class="meta">' + chips + '</div>' +
+
+        '<div class="panel">' +
+          '<h2>Sign off on this design</h2>' +
+          '<p class="sub">Your name and the time are recorded as your authorization to manufacture.</p>' +
+          '<div class="field">' +
+            '<label for="signName">Your name</label>' +
+            '<input type="text" id="signName" autocomplete="name" placeholder="e.g. Jordan Smith" />' +
+          '</div>' +
+          '<div class="btn-row">' +
+            '<button class="btn btn--primary btn--block" id="approveBtn">Approve this design</button>' +
+            '<button class="btn btn--ghost btn--block" id="changesToggle" type="button">Request changes instead</button>' +
+          '</div>' +
+          '<div class="changes-box" id="changesBox">' +
+            '<div class="field" style="margin-top:1rem;">' +
+              '<label for="changeNote">What needs to change?</label>' +
+              '<textarea id="changeNote" placeholder="Tell us what to adjust…"></textarea>' +
+            '</div>' +
+            '<button class="btn btn--primary btn--block" id="changesBtn">Send change request</button>' +
+          '</div>' +
+          '<p class="err" id="err" role="alert"></p>' +
+        '</div>';
+
+      wireApprove(d);
+    }
+
+    function wireApprove(d) {
+      var frame = document.getElementById('frame');
+      if (frame) {
+        frame.addEventListener('click', function () { frame.classList.toggle('zoomed');
+          var img = document.getElementById('designImg');
+          if (frame.classList.contains('zoomed')) {
+            img.style.width = '180%'; img.style.maxWidth = 'none';
+          } else { img.style.width = '100%'; }
+        });
+      }
+
+      var nameEl = document.getElementById('signName');
+      var errEl = document.getElementById('err');
+      var approveBtn = document.getElementById('approveBtn');
+      var changesToggle = document.getElementById('changesToggle');
+      var changesBox = document.getElementById('changesBox');
+      var changesBtn = document.getElementById('changesBtn');
+      var noteEl = document.getElementById('changeNote');
+
+      changesToggle.addEventListener('click', function () {
+        changesBox.classList.toggle('open');
+        changesToggle.textContent = changesBox.classList.contains('open')
+          ? 'Never mind — go back' : 'Request changes instead';
+      });
+
+      function submit(decision, note, btn) {
+        var nm = (nameEl.value || '').trim();
+        errEl.textContent = '';
+        if (!nm) { errEl.textContent = 'Please enter your name first.'; nameEl.focus(); return; }
+        if (decision === 'changes_requested' && !(note || '').trim()) {
+          errEl.textContent = 'Please tell us what needs to change.'; noteEl.focus(); return;
+        }
+        var label = btn.textContent;
+        btn.disabled = true; approveBtn.disabled = true; changesBtn.disabled = true;
+        btn.textContent = 'Sending…';
+
+        rpc('submit_drawer_approval', {
+          p_id: d.id, p_name: nm, p_decision: decision, p_note: note || null
+        })
+        .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            var msg = (res.body && (res.body.message || res.body.hint)) || 'Something went wrong. Please try again.';
+            throw new Error(msg);
+          }
+          renderApprove; // no-op to keep reference
+          renderAlreadyDecided({
+            customer_approval_status: decision,
+            approved_by: nm,
+            approved_at: decision === 'approved' ? new Date().toISOString() : null
+          });
+          window.scrollTo(0, 0);
+        })
+        .catch(function (e) {
+          errEl.textContent = e.message || 'Something went wrong. Please try again.';
+          btn.disabled = false; approveBtn.disabled = false; changesBtn.disabled = false;
+          btn.textContent = label;
+        });
+      }
+
+      approveBtn.addEventListener('click', function () { submit('approved', null, approveBtn); });
+      changesBtn.addEventListener('click', function () { submit('changes_requested', noteEl.value, changesBtn); });
+    }
+
+    function load() {
+      if (!drawerId) { renderState('Design not found', 'This link is missing a design code.'); return; }
+
+      rpc('get_drawer_approval', { p_id: drawerId })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (rows) {
+          var d = Array.isArray(rows) ? rows[0] : rows;
+          if (!d) { renderState('Design not found', 'We couldn’t find a design for this link.'); return; }
+          if (d.customer_approval_status === 'approved') { renderAlreadyDecided(d); return; }
+          renderApprove(d);
+        })
+        .catch(function () {
+          renderState('Something went wrong', 'We couldn’t load this design right now. Please try again later.');
+        });
+    }
+
+    load();
+  </script>
+</body>
+</html>
