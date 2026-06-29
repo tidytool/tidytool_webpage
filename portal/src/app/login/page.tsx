@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -13,39 +14,58 @@ export default function LoginPage() {
   // Surface a failed/expired sign-in link (the /auth/confirm route redirects here).
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("error") === "link") {
-      setError("That sign-in link was invalid or expired. Request a new one below.");
+      setError("That link was invalid or expired. Sign in below, or request a new link.");
     }
   }, []);
 
-  async function sendLink(e: React.FormEvent) {
+  function siteUrl() {
+    return process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
+  }
+
+  // Primary path: email + password.
+  async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     const addr = email.trim();
-    if (!addr) {
-      setError("Please enter your email.");
+    if (!addr || !password) {
+      setError("Enter your email and password.");
       return;
     }
     setBusy(true);
     const supabase = createClient();
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
-    // Invite/claim-only: do NOT create new users from the login form. Customers are
-    // provisioned ahead of time (Supabase dashboard invite now; automated invite flow later).
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: addr,
-      options: { emailRedirectTo: `${siteUrl}/auth/confirm`, shouldCreateUser: false },
+      password,
     });
     setBusy(false);
     if (error) {
-      // Supabase returns an error when the email has no account (signups disabled).
-      const notProvisioned = /signups? not allowed|not allowed for otp|user not found/i.test(
-        error.message,
-      );
       setError(
-        notProvisioned
-          ? "We couldn't find an account for that email. If you've ordered from us, contact sam@thetidytool.com to get access."
-          : error.message,
+        "That email or password didn't match. First time here? Use the link below to set your password.",
       );
+      return;
+    }
+    // Full reload so server components pick up the fresh session.
+    window.location.assign("/");
+  }
+
+  // First-time setup OR forgot password: email a one-time link. This sends a
+  // recovery email (works for pre-provisioned, invite-only accounts) that lands
+  // the customer on /set-password. It never creates a new account.
+  async function emailLink() {
+    setError("");
+    const addr = email.trim();
+    if (!addr) {
+      setError("Enter your email first, then request a link.");
+      return;
+    }
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(addr, {
+      redirectTo: `${siteUrl()}/auth/confirm?next=/set-password`,
+    });
+    setBusy(false);
+    if (error) {
+      setError(error.message);
       return;
     }
     setSent(true);
@@ -58,20 +78,20 @@ export default function LoginPage() {
         <p className="eyebrow">Customer Portal</p>
         <h1>Sign in</h1>
         <p className="muted">
-          Enter the email on your TidyTool order. We&apos;ll send you a secure
-          sign-in link — no password to remember.
+          Use the email on your TidyTool order and your password. First time
+          here? Set a password with the link below.
         </p>
 
         {sent ? (
           <div className="card" style={{ marginTop: "1.25rem" }}>
             <h2 style={{ fontSize: "1.1rem" }}>Check your email</h2>
             <p className="muted" style={{ margin: 0 }}>
-              We sent a sign-in link to <strong>{email}</strong>. Open it on this
-              device to continue.
+              We sent a link to <strong>{email}</strong>. Open it on this device
+              to set your password and sign in.
             </p>
           </div>
         ) : (
-          <form className="card" style={{ marginTop: "1.25rem" }} onSubmit={sendLink}>
+          <form className="card" style={{ marginTop: "1.25rem" }} onSubmit={signIn}>
             <div className="field">
               <label htmlFor="email">Email address</label>
               <input
@@ -83,11 +103,32 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
             <button className="btn btn--primary btn--block" disabled={busy}>
-              {busy ? "Sending…" : "Email me a sign-in link"}
+              {busy ? "Signing in…" : "Sign in"}
             </button>
             <p className="err" role="alert">
               {error}
+            </p>
+            <p className="muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.9rem" }}>
+              First time here, or forgot your password?{" "}
+              <button
+                type="button"
+                onClick={emailLink}
+                disabled={busy}
+                className="linkbtn"
+              >
+                Email me a link
+              </button>
             </p>
           </form>
         )}
