@@ -1,38 +1,61 @@
-# TidyTool — Lead-Gen Website
+# TidyTool — Website + Customer Portal
 
-A simple, fast, dependency-free static site for [thetidytool.com](https://thetidytool.com).
-Its one job: **turn visitors into qualified leads** via a "Get a Free Quote" form, and
-ping you whenever someone fills it out.
+TidyTool's web presence does **two jobs** from one repo:
 
-Built to be hosted locally during iteration, then deployed to **Cloudflare Pages** (Phase 1).
+1. **Lead generation** — a simple, fast, dependency-free static marketing site
+   (`docs/`) for [thetidytool.com](https://thetidytool.com). Its job: **turn visitors into
+   qualified leads** via a "Get a Free Quote" form, and ping you on every submission.
+2. **Customer portal** — an authenticated account hub (`portal/`, Next.js + Supabase) where
+   existing customers sign in, see their drawers/orders, and **approve foam designs** before
+   we cut.
+
+The two share a brand and a Supabase backend but build and deploy separately. See `CLAUDE.md`
+for the working agreement and `portal/README.md` for portal setup.
 
 ---
 
-## Tech stack (deliberately boring)
+## Tech stack
+
+**Marketing site (`docs/`) — deliberately boring:**
 
 - Plain **HTML + CSS + vanilla JS**. No framework, no build step.
-- One page: `index.html`. All styles in `assets/css/styles.css`, all JS in `assets/js/main.js`.
-- Lead capture via an embedded **Tally** form (free tier handles unlimited submissions + email notifications).
+- Pages like `index.html`; styles in `assets/css/styles.css`, JS in `assets/js/main.js`.
+- Lead capture via an embedded **Tally** form (free tier: unlimited submissions + email notifications).
+- A public, link-based design-approval page (`docs/approve/`) reads Supabase directly via
+  `fetch` + the anon key — still no framework, no build step.
 
-Why no build step? It hosts anywhere with zero config, Cloudflare Pages deploys it as-is on
-every `git push`, and the code-gen agent can edit it without a toolchain to break.
+Why no build step here? It hosts anywhere with zero config, GitHub/Cloudflare Pages deploy it
+as-is on every push, and an AI agent can edit it without a toolchain to break.
+
+**Customer portal (`portal/`):**
+
+- **Next.js 15** (App Router, React, TypeScript) + **Supabase** auth via `@supabase/ssr`.
+- A build step lives **here only** — this is real application state (logins, dashboards,
+  approvals), so a framework earns its keep. See `portal/README.md`.
 
 ---
 
 ## Run it locally
 
-You only need a static file server. Pick one:
+**Marketing site** — just a static file server over `docs/`:
 
 ```bash
-# Python (preinstalled on macOS)
-python3 -m http.server 8080
-
-# or Node, if you prefer
-npx serve .
+cd docs
+python3 -m http.server 8080   # or: npx serve .
 ```
 
-Then open <http://localhost:8080>. To share on your local network, others can hit
+Then open <http://localhost:8080>. To share on your LAN, others can hit
 `http://<your-computer-ip>:8080` while the server runs.
+
+**Customer portal** — a Next.js app with its own setup:
+
+```bash
+cd portal
+cp .env.example .env.local    # add the Supabase anon key
+npm install && npm run dev     # http://localhost:3000
+```
+
+Full portal instructions live in `portal/README.md`.
 
 ---
 
@@ -69,10 +92,16 @@ Until then the placeholder renders so the layout is complete.
 
 ```
 tidytool_webpage/
-├── index.html              # the entire site
-├── assets/
-│   ├── css/styles.css      # all styling; brand tokens live in :root
-│   └── js/main.js          # nav, smooth scroll, scroll-reveal
+├── docs/                   # PUBLIC marketing site (GitHub Pages serves this folder)
+│   ├── index.html          # homepage
+│   ├── approve/            # public, link-based design-approval page (vanilla)
+│   ├── q/ + drawer.html    # QR drawer pages
+│   └── assets/             # css (brand tokens in :root) + vanilla js
+├── portal/                 # CUSTOMER PORTAL (Next.js + Supabase; built/deployed separately)
+│   ├── src/                # app routes, components, supabase helpers
+│   └── supabase/migrations # staged SQL (e.g. get_my_drawers)
+├── planning/               # feature specs & internal notes (not served)
+├── prompts/                # phase implementation prompts (not served)
 ├── README.md               # this file
 ├── ROADMAP.md              # phased plan + progress checklist
 ├── CLAUDE.md               # guardrails & briefs for the AI dev workflow

@@ -1,0 +1,94 @@
+/* Brand tokens mirror docs/assets/css/styles.css so the portal and marketing site
+   feel like one product. Re-theme from here (and keep in sync with the site). */
+:root {
+  --c-bg: #f7f8fa;
+  --c-surface: #ffffff;
+  --c-surface-2: #eff2f5;
+  --c-text: #1e2a33;
+  --c-text-dim: #4a5860;
+  --c-accent: #e8312a;
+  --c-accent-2: #ff6b61;
+  --c-border: #dde3e8;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --maxw: 1120px;
+  --radius: 14px;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.07);
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a { color: var(--c-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 { line-height: 1.2; margin: 0 0 0.4rem; }
+
+.container { max-width: var(--maxw); margin: 0 auto; padding: 0 1.25rem; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+
+.site-header {
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border);
+}
+.site-header .container {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px;
+}
+.brand { font-weight: 800; font-size: 1.25rem; color: var(--c-text); }
+.brand span { color: var(--c-accent); }
+
+.eyebrow {
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem;
+  font-weight: 700; color: var(--c-accent); margin: 0 0 0.35rem;
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  padding: 0.7rem 1.1rem; border-radius: var(--radius); font: inherit; font-weight: 700;
+  border: 1px solid transparent; cursor: pointer; transition: filter 0.15s ease;
+  text-decoration: none;
+}
+.btn:hover { text-decoration: none; filter: brightness(0.96); }
+.btn--primary { background: var(--c-accent); color: #fff; }
+.btn--ghost { background: transparent; color: var(--c-text); border-color: var(--c-border); }
+.btn--block { width: 100%; }
+.btn:disabled { opacity: 0.6; cursor: default; }
+
+.card {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-radius: 999px; padding: 0.35rem 0.85rem; font-size: 0.85rem;
+  font-weight: 600; color: var(--c-text-dim);
+}
+.chip strong { color: var(--c-text); font-weight: 700; }
+
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+.field input, .field textarea {
+  width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--c-border);
+  border-radius: var(--radius); font: inherit; background: var(--c-bg); color: var(--c-text);
+}
+.field input:focus, .field textarea:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.field textarea { min-height: 84px; resize: vertical; }
+
+.muted { color: var(--c-text-dim); }
+.err { color: #c0392b; font-size: 0.88rem; margin: 0.5rem 0 0; min-height: 1.1em; }
+
+.badge { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }
+.badge--approved { background: #e7f6ec; color: #1e7e45; border: 1px solid #b6e3c5; }
+.badge--changes { background: #fdeede; color: #a85c12; border: 1px solid #f3cf9e; }
+.badge--pending { background: var(--c-surface-2); color: var(--c-text-dim); border: 1px solid var(--c-border); }

@@ -1,9 +1,11 @@
-# TidyTool Website Roadmap
+# TidyTool Website + Portal Roadmap
 
-**Date:** June 12, 2026
-**Direction:** Credibility prop for outbound Cache Valley sales · Lean-manufacturer audience first · Local/regional Utah SEO · Brand-hedged (rebrand undecided)
+**Date:** June 12, 2026 (updated June 28, 2026)
+**Direction:** Two pillars. (1) **Lead gen** — a credibility prop for outbound Cache Valley sales: lean-manufacturer audience first, local/regional Utah SEO, brand-hedged (rebrand undecided). (2) **Customer portal** — the post-sale account hub where customers approve designs and track orders (Phase 4, now active).
 
-The site's job: when a CI engineer at Autoliv or Thermo Fisher gets your email or visits after a noon drop-in, the site must confirm you're credible in their world within 30 seconds. It is not a traffic engine yet.
+Pillar 1's job: when a CI engineer at Autoliv or Thermo Fisher gets your email or visits after a noon drop-in, the marketing site must confirm you're credible in their world within 30 seconds. It is not a traffic engine yet.
+
+Pillar 2's job: once someone buys, give them one signed-in place to review and approve their foam layouts (our go-ahead to cut), track order status, and — later — reorder and manage saved designs. Built as a separate Next.js + Supabase app in `portal/`; conversion on the marketing site always takes precedence.
 
 ---
 
@@ -74,7 +76,7 @@ These are human tasks that require Sam's direct involvement. They are tracked he
 - [ ] **GBP setup:** Follow `planning/gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
 - [ ] **Testimonial:** Fill in the `[TODO]` placeholders on the homepage proof section and the case study page (`case-study-technical-college.html`). Get written permission from your contact before publishing their name and title.
 - [ ] **Rebrand decision deadline:** September 2026. Every month undecided is a month of unbuilt domain equity. Set a calendar reminder. All current Phase 2 assets (GBP, landing pages, schema) are brand-neutral and survive a rename.
-- [ ] **Supabase database hardening (security debt, deferred 2026-06-24).** The QR drawer page ships against intentionally permissive read policies. Before scaling QR usage, tighten:
+- [ ] **Supabase database hardening (security debt, deferred 2026-06-24).** _In progress (2026-06-28): tested on a branch; `get_public_drawer()` RPC applied to prod and `docs/drawer.html` updated to use it. Remaining: deploy `docs/`, then apply the policy drops in `portal/supabase/migrations/0002_harden_anon_reads.sql` (steps 2-3) to prod._ The QR drawer page ships against intentionally permissive read policies. Before scaling QR usage, tighten:
   - `drawer` table has a `"Enable read access for all users"` policy (anon SELECT, `qual = true`) — the anon key can read **every column of every drawer**, including internal fields (`created_by`, `order_id`, `dxf_url`, `point_cloud_url`). Replace with a `SECURITY DEFINER` function `get_public_drawer(id)` returning only public-safe fields (`nickname`, `photo_url`, `dimensions`, `status`), then drop the blanket policy. (Won't break tidyCAM — the app reads as the authenticated owner.)
   - `employee` table has the same `"Enable read access for all users"` policy — anon can read employee names, phones, catchphrases. Remove/restrict; unrelated to the QR feature but a live PII exposure.
   - Re-verify after changes: anon can still read a drawer by `id`, but cannot list all drawers, read internal columns, or read the `employee`/`order`/`customer` tables.
