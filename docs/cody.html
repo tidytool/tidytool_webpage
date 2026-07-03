@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cody's Page ⚡</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive, sans-serif;
+      background: linear-gradient(180deg, #ffe14d 0%, #ffd21f 40%, #ffc400 100%);
+      color: #4a3800;
+      text-align: center;
+      overflow-x: hidden;
+    }
+    header { padding: 3rem 1rem 1rem; }
+    h1 {
+      font-size: clamp(2.5rem, 8vw, 5rem);
+      color: #3b3b3b;
+      text-shadow: 3px 3px 0 #fff27a;
+      animation: bounce 2s ease-in-out infinite;
+    }
+    @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    .subtitle { font-size: 1.3rem; margin-top: .5rem; font-weight: bold; }
+    .bolts { font-size: 2rem; letter-spacing: 1rem; }
+    section { padding: 2rem 1rem; max-width: 760px; margin: 0 auto; }
+    h2 { font-size: 2rem; margin-bottom: 1rem; }
+    .card {
+      background: rgba(255,255,255,.85);
+      border-radius: 24px;
+      padding: 1.5rem;
+      box-shadow: 0 6px 0 rgba(74,56,0,.25);
+      border: 4px solid #3b3b3b;
+    }
+    .emoji-row { font-size: 3.5rem; line-height: 1.4; }
+    .emoji-row span { display: inline-block; cursor: pointer; transition: transform .15s; }
+    .emoji-row span:hover { transform: scale(1.4) rotate(-10deg); }
+    .wiggle { animation: wiggle 1.5s ease-in-out infinite; }
+    @keyframes wiggle { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+    svg { max-width: 100%; height: auto; }
+
+    /* ---- Pokeball ---- */
+    #pokeball-stage { position: relative; height: 260px; }
+    #pokeball { cursor: pointer; transition: transform .15s; }
+    #pokeball:hover { transform: scale(1.08); }
+    #pokeball.shake { animation: shake .5s ease-in-out; }
+    @keyframes shake { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-15deg); } 75% { transform: rotate(15deg); } }
+    #pika-pop {
+      position: absolute; left: 50%; bottom: 70px; transform: translate(-50%, 40px) scale(0);
+      transition: transform .5s cubic-bezier(.2,1.6,.4,1); pointer-events: none;
+    }
+    #pika-pop.show { transform: translate(-50%, -40px) scale(1); }
+    .spark { position: absolute; font-size: 2rem; opacity: 0; }
+    .spark.fly { animation: sparkfly 1s ease-out forwards; }
+    @keyframes sparkfly {
+      0% { opacity: 1; transform: translate(0,0) scale(.5); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.6); }
+    }
+
+    /* ---- Dragons flying across ---- */
+    .dragon-fly {
+      position: fixed; top: 12%; left: -80px; font-size: 3rem; z-index: 5; pointer-events: none;
+      animation: flyby 14s linear infinite;
+    }
+    .dragon-fly.two { top: 24%; animation-delay: 7s; font-size: 2.2rem; }
+    @keyframes flyby { from { left: -80px; } to { left: 110%; } }
+
+    /* ---- Elevator tower ---- */
+    #tower-card { border-color: #7a4a00; }
+    #tower-scene { position: relative; }
+    #elevator-car { transition: transform 3s ease-in-out; }
+    #underground { max-height: 0; overflow: hidden; transition: max-height 2s ease-in-out; }
+    #underground.open { max-height: 600px; }
+    .coaster-car { animation: coast 6s linear infinite; }
+    @keyframes coast { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+    .twinkle { animation: twinkle 1s ease-in-out infinite alternate; }
+    @keyframes twinkle { from { opacity: .3; } to { opacity: 1; } }
+    footer { padding: 2rem; font-size: 1rem; }
+    a.home { color: #4a3800; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="dragon-fly">🐉</div>
+  <div class="dragon-fly two">🐲</div>
+
+  <header>
+    <h1>⚡ Cody's Page ⚡</h1>
+    <p class="subtitle">Top secret! Only the coolest kids can find this page. 😎</p>
+    <p class="bolts">⚡⚡⚡</p>
+  </header>
+
+  <section>
+    <div class="card">
+      <h2>👶 Baby Levi!</h2>
+      <svg viewBox="0 0 200 200" width="200" role="img" aria-label="Baby Levi — a baby with blonde hair and blue eyes">
+        <ellipse cx="100" cy="165" rx="55" ry="32" fill="#9dd9ff"/>
+        <circle cx="100" cy="95" r="55" fill="#ffe0c2"/>
+        <path d="M52 80 Q60 30 100 32 Q140 30 148 80 Q135 60 100 58 Q65 60 52 80 Z" fill="#ffd94d"/>
+        <path d="M96 34 Q100 20 108 30 Q104 38 100 40 Z" fill="#ffd94d"/>
+        <circle cx="80" cy="95" r="8" fill="#3b82f6"/>
+        <circle cx="120" cy="95" r="8" fill="#3b82f6"/>
+        <circle cx="82.5" cy="92.5" r="2.5" fill="#fff"/>
+        <circle cx="122.5" cy="92.5" r="2.5" fill="#fff"/>
+        <circle cx="68" cy="112" r="7" fill="#ffb3ad" opacity=".7"/>
+        <circle cx="132" cy="112" r="7" fill="#ffb3ad" opacity=".7"/>
+        <path d="M85 118 Q100 132 115 118" stroke="#c96f4a" stroke-width="4" fill="none" stroke-linecap="round"/>
+      </svg>
+      <p>Baby Levi says hi to cousin Cody! 💙</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🎅 Santa &amp; His Elves!</h2>
+      <div class="emoji-row">
+        <span class="wiggle">🎅</span><span>🧝</span><span>🧝‍♀️</span><span>🧝‍♂️</span><span>🎁</span><span class="wiggle">🛷</span>
+      </div>
+      <p>The elves are busy building toys… maybe some for Cody!</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>⚡ Pikachu!</h2>
+      <svg viewBox="0 0 240 220" width="240" role="img" aria-label="Pikachu">
+        <!-- ears -->
+        <path d="M60 75 L30 8 Q28 2 34 5 L85 50 Z" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+        <path d="M180 75 L210 8 Q212 2 206 5 L155 50 Z" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+        <path d="M34 12 L44 34 L58 22 Z" fill="#3b3b3b"/>
+        <path d="M206 12 L196 34 L182 22 Z" fill="#3b3b3b"/>
+        <!-- tail -->
+        <path d="M195 150 L225 140 L210 120 L235 110 L222 92 L238 80 L232 128 L212 138 L222 155 Z" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3" stroke-linejoin="round"/>
+        <!-- body + head -->
+        <ellipse cx="120" cy="160" rx="62" ry="50" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+        <circle cx="120" cy="95" r="58" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+        <!-- eyes -->
+        <circle cx="98" cy="90" r="9" fill="#3b3b3b"/>
+        <circle cx="142" cy="90" r="9" fill="#3b3b3b"/>
+        <circle cx="101" cy="87" r="3" fill="#fff"/>
+        <circle cx="145" cy="87" r="3" fill="#fff"/>
+        <!-- cheeks -->
+        <circle cx="76" cy="112" r="11" fill="#e8312a"/>
+        <circle cx="164" cy="112" r="11" fill="#e8312a"/>
+        <!-- nose + mouth -->
+        <path d="M117 103 L123 103 L120 107 Z" fill="#3b3b3b"/>
+        <path d="M105 115 Q112 123 120 115 Q128 123 135 115" stroke="#3b3b3b" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <!-- arms -->
+        <path d="M75 150 Q60 160 68 175" stroke="#3b3b3b" stroke-width="3" fill="none"/>
+        <path d="M165 150 Q180 160 172 175" stroke="#3b3b3b" stroke-width="3" fill="none"/>
+        <!-- feet -->
+        <ellipse cx="90" cy="205" rx="18" ry="9" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+        <ellipse cx="150" cy="205" rx="18" ry="9" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+      </svg>
+      <p>Pika pika! ⚡</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🔴 The Pokéball!</h2>
+      <p><strong>Click it to see who's inside!!</strong></p>
+      <div id="pokeball-stage">
+        <div id="pika-pop">
+          <svg viewBox="0 0 240 220" width="150" aria-hidden="true">
+            <path d="M60 75 L30 8 Q28 2 34 5 L85 50 Z" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+            <path d="M180 75 L210 8 Q212 2 206 5 L155 50 Z" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+            <path d="M34 12 L44 34 L58 22 Z" fill="#3b3b3b"/>
+            <path d="M206 12 L196 34 L182 22 Z" fill="#3b3b3b"/>
+            <circle cx="120" cy="95" r="58" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+            <circle cx="98" cy="90" r="9" fill="#3b3b3b"/>
+            <circle cx="142" cy="90" r="9" fill="#3b3b3b"/>
+            <circle cx="101" cy="87" r="3" fill="#fff"/>
+            <circle cx="145" cy="87" r="3" fill="#fff"/>
+            <circle cx="76" cy="112" r="11" fill="#e8312a"/>
+            <circle cx="164" cy="112" r="11" fill="#e8312a"/>
+            <path d="M105 115 Q112 123 120 115 Q128 123 135 115" stroke="#3b3b3b" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <svg id="pokeball" viewBox="0 0 200 200" width="160" role="button" aria-label="Pokeball — click to open" style="position:absolute;left:50%;bottom:0;margin-left:-80px;">
+          <g id="ball-top">
+            <path d="M10 100 A90 90 0 0 1 190 100 Z" fill="#e8312a" stroke="#3b3b3b" stroke-width="6"/>
+          </g>
+          <g id="ball-bottom">
+            <path d="M10 100 A90 90 0 0 0 190 100 Z" fill="#f5f5f5" stroke="#3b3b3b" stroke-width="6"/>
+          </g>
+          <rect x="10" y="94" width="180" height="12" fill="#3b3b3b"/>
+          <circle cx="100" cy="100" r="24" fill="#f5f5f5" stroke="#3b3b3b" stroke-width="6"/>
+          <circle cx="100" cy="100" r="10" fill="#fff" stroke="#3b3b3b" stroke-width="4"/>
+        </svg>
+      </div>
+      <p id="pokeball-msg" style="min-height:1.5em;"></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🔥 Marshmallow Camp Stove!</h2>
+      <svg viewBox="0 0 320 200" width="300" role="img" aria-label="A camp stove roasting marshmallows">
+        <!-- stove body -->
+        <rect x="90" y="120" width="140" height="55" rx="8" fill="#2f6b3a" stroke="#1d4424" stroke-width="4"/>
+        <rect x="105" y="135" width="110" height="25" rx="4" fill="#1d4424"/>
+        <circle cx="122" cy="147" r="6" fill="#ffd21f"/>
+        <!-- burner + flame -->
+        <rect x="130" y="108" width="60" height="12" rx="4" fill="#555"/>
+        <path d="M160 105 Q145 85 155 65 Q158 80 165 72 Q162 90 175 92 Q168 105 160 105 Z" fill="#ff8c1a"/>
+        <path d="M160 103 Q152 92 158 78 Q160 88 166 84 Q163 96 168 98 Q164 103 160 103 Z" fill="#ffd21f"/>
+        <!-- marshmallow sticks -->
+        <line x1="60" y1="40" x2="150" y2="90" stroke="#8a5a2b" stroke-width="5" stroke-linecap="round"/>
+        <rect x="138" y="76" width="26" height="20" rx="6" fill="#fff7ec" stroke="#e0c9a8" stroke-width="3" transform="rotate(28 151 86)"/>
+        <line x1="260" y1="40" x2="172" y2="90" stroke="#8a5a2b" stroke-width="5" stroke-linecap="round"/>
+        <rect x="158" y="74" width="26" height="20" rx="6" fill="#fff3da" stroke="#c98a3b" stroke-width="3" transform="rotate(-28 171 84)"/>
+        <!-- extra marshmallows -->
+        <rect x="40" y="150" width="30" height="22" rx="7" fill="#fff7ec" stroke="#e0c9a8" stroke-width="3"/>
+        <rect x="55" y="130" width="30" height="22" rx="7" fill="#fff7ec" stroke="#e0c9a8" stroke-width="3"/>
+        <rect x="250" y="145" width="30" height="22" rx="7" fill="#fff7ec" stroke="#e0c9a8" stroke-width="3"/>
+      </svg>
+      <p>Toasty marshmallows — golden brown, just how Cody likes them! 🍡🔥</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card" id="tower-card">
+      <h2>🗼 The Secret Underground Tower!</h2>
+      <p><strong>Click the tower and ride the elevator DOWN…</strong></p>
+      <div id="tower-scene">
+        <svg id="tower-svg" viewBox="0 0 300 320" width="300" role="button" aria-label="Secret tower — click to ride the elevator underground" style="cursor:pointer;">
+          <!-- sky tower -->
+          <rect x="125" y="20" width="50" height="180" fill="#8ea0ad" stroke="#3b3b3b" stroke-width="4"/>
+          <polygon points="125,20 150,0 175,20" fill="#e8312a" stroke="#3b3b3b" stroke-width="4"/>
+          <rect x="135" y="35" width="12" height="14" fill="#cfe8ff"/><rect x="153" y="35" width="12" height="14" fill="#cfe8ff"/>
+          <rect x="135" y="60" width="12" height="14" fill="#cfe8ff"/><rect x="153" y="60" width="12" height="14" fill="#cfe8ff"/>
+          <rect x="135" y="85" width="12" height="14" fill="#cfe8ff"/><rect x="153" y="85" width="12" height="14" fill="#cfe8ff"/>
+          <rect x="135" y="110" width="12" height="14" fill="#cfe8ff"/><rect x="153" y="110" width="12" height="14" fill="#cfe8ff"/>
+          <!-- ground -->
+          <rect x="0" y="200" width="300" height="10" fill="#3d8b40"/>
+          <rect x="0" y="210" width="300" height="110" fill="#6b4a2b"/>
+          <!-- underground shaft -->
+          <rect x="132" y="210" width="36" height="110" fill="#2b2b2b"/>
+          <!-- elevator car -->
+          <g id="elevator-car">
+            <rect x="136" y="150" width="28" height="40" rx="4" fill="#ffd21f" stroke="#3b3b3b" stroke-width="3"/>
+            <line x1="150" y1="150" x2="150" y2="190" stroke="#3b3b3b" stroke-width="2"/>
+          </g>
+          <text x="150" y="235" text-anchor="middle" font-size="13" fill="#ffd21f" font-weight="bold">? ? ?</text>
+        </svg>
+      </div>
+
+      <div id="underground">
+        <h2 style="margin-top:1rem;">🎉 UNDERGROUND DISNEYLAND! 🎉</h2>
+        <svg viewBox="0 0 400 240" width="360" role="img" aria-label="An underground amusement park with a roller coaster">
+          <rect x="0" y="0" width="400" height="240" fill="#1a1440" rx="12"/>
+          <!-- twinkly lights -->
+          <circle class="twinkle" cx="40" cy="30" r="3" fill="#ffd21f"/>
+          <circle class="twinkle" cx="120" cy="20" r="3" fill="#ff6fa5" style="animation-delay:.3s"/>
+          <circle class="twinkle" cx="220" cy="28" r="3" fill="#5bc9ff" style="animation-delay:.6s"/>
+          <circle class="twinkle" cx="320" cy="18" r="3" fill="#8bff8b" style="animation-delay:.2s"/>
+          <circle class="twinkle" cx="370" cy="40" r="3" fill="#ffd21f" style="animation-delay:.8s"/>
+          <!-- roller coaster track -->
+          <path id="track" d="M10 200 Q60 90 110 170 Q140 215 175 160 Q200 115 230 60 Q260 15 290 90 Q310 140 340 120 Q370 100 390 150"
+                fill="none" stroke="#e8312a" stroke-width="6" stroke-linecap="round"/>
+          <path d="M10 200 Q60 90 110 170 Q140 215 175 160 Q200 115 230 60 Q260 15 290 90 Q310 140 340 120 Q370 100 390 150"
+                fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="4 10"/>
+          <!-- support posts -->
+          <line x1="60" y1="135" x2="60" y2="230" stroke="#888" stroke-width="4"/>
+          <line x1="230" y1="62" x2="230" y2="230" stroke="#888" stroke-width="4"/>
+          <line x1="340" y1="122" x2="340" y2="230" stroke="#888" stroke-width="4"/>
+          <!-- coaster car riding the track -->
+          <g class="coaster-car" style="offset-path: path('M10 200 Q60 90 110 170 Q140 215 175 160 Q200 115 230 60 Q260 15 290 90 Q310 140 340 120 Q370 100 390 150'); offset-rotate: auto;">
+            <rect x="-14" y="-16" width="28" height="16" rx="5" fill="#ffd21f" stroke="#3b3b3b" stroke-width="2"/>
+            <circle cx="-7" cy="2" r="4" fill="#3b3b3b"/>
+            <circle cx="7" cy="2" r="4" fill="#3b3b3b"/>
+            <text x="0" y="-20" text-anchor="middle" font-size="12">🙌</text>
+          </g>
+          <!-- ground -->
+          <rect x="0" y="228" width="400" height="12" fill="#3b2d75" rx="6"/>
+        </svg>
+        <p style="font-size:1.2rem;"><strong>WOOHOO!</strong> A secret roller coaster, deep underground! 🎢⚡</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🐉 Dragons!</h2>
+      <div class="emoji-row">
+        <span class="wiggle">🐉</span><span>🐲</span><span>🔥</span><span class="wiggle">🐉</span>
+      </div>
+      <p>Watch out — dragons are flying around this whole page! Can you spot them?</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Made with ⚡ for Cody</p>
+    <p><a class="home" href="/">🏠 Back to the boring grown-up page</a></p>
+  </footer>
+
+  <script>
+    // Emoji spin on tap
+    document.querySelectorAll('.emoji-row span').forEach(function (el) {
+      el.addEventListener('click', function () {
+        el.style.transition = 'transform .6s';
+        el.style.transform = 'rotate(360deg) scale(1.6)';
+        setTimeout(function () { el.style.transform = ''; }, 600);
+      });
+    });
+
+    // Pokeball: shake, then Pikachu pops out with sparks
+    var ball = document.getElementById('pokeball');
+    var pika = document.getElementById('pika-pop');
+    var msg = document.getElementById('pokeball-msg');
+    var stage = document.getElementById('pokeball-stage');
+    ball.addEventListener('click', function () {
+      if (pika.classList.contains('show')) {
+        pika.classList.remove('show');
+        msg.textContent = 'Pikachu, return!';
+        return;
+      }
+      ball.classList.add('shake');
+      msg.textContent = 'Something is in there…';
+      setTimeout(function () {
+        ball.classList.remove('shake');
+        pika.classList.add('show');
+        msg.textContent = '⚡ PIKACHU, I CHOOSE YOU!! ⚡';
+        for (var i = 0; i < 8; i++) {
+          var s = document.createElement('div');
+          s.className = 'spark';
+          s.textContent = '⚡';
+          s.style.left = '50%';
+          s.style.bottom = '120px';
+          s.style.setProperty('--dx', (Math.cos(i / 8 * 6.283) * 110) + 'px');
+          s.style.setProperty('--dy', (Math.sin(i / 8 * 6.283) * 110 - 40) + 'px');
+          stage.appendChild(s);
+          s.classList.add('fly');
+          setTimeout(function (el) { el.remove(); }.bind(null, s), 1100);
+        }
+      }, 600);
+    });
+
+    // Tower: elevator rides down, underground park opens
+    var tower = document.getElementById('tower-svg');
+    var car = document.getElementById('elevator-car');
+    var under = document.getElementById('underground');
+    var going = false;
+    tower.addEventListener('click', function () {
+      if (going) return;
+      going = true;
+      car.style.transform = 'translateY(125px)';
+      setTimeout(function () {
+        under.classList.add('open');
+        setTimeout(function () {
+          under.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // reset the elevator for another ride
+          setTimeout(function () { car.style.transform = ''; going = false; }, 2000);
+        }, 500);
+      }, 2800);
+    });
+  </script>
+</body>
+</html>
