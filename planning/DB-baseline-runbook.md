@@ -1,6 +1,13 @@
 # DB baseline runbook — capture live Supabase schema into migrations
 
-**Home for DB migrations: the `tidyCAM` repo** (decided 2026-06-27). It owns the data model, is
+> **SUPERSEDED 2026-07-03.** Migration ownership moved to **this repo**
+> (`portal/supabase/migrations/`) per `ARCHITECTURE.md` decision 1; tidyCAM consumes
+> types and never migrates. The baseline itself was completed 2026-07-03 (T1): all ten
+> prod history entries were materialized byte-exact from
+> `supabase_migrations.schema_migrations` — see `portal/supabase/migrations/README.md`
+> for provenance and verification. The CLI procedure below is kept for reference only.
+
+**Home for DB migrations: the `tidyCAM` repo** (decided 2026-06-27, superseded — see above). It owns the data model, is
 already linked to the project, and is private (the webpage repo is public, so schema + RLS logic
 must not live there). The website repo stays pure frontend and reads over REST.
 
