@@ -52,7 +52,8 @@ flow, so login works either way. Edit the template when you want the canonical s
   The key is read from `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, falling back to
   `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 - **Dashboard (`/`):** calls the `get_my_drawers()` RPC (in
-  `supabase/migrations/0001_get_my_drawers.sql`, **applied to production 2026-06-28**). It
+  `supabase/migrations/20260628223234_add_get_my_drawers.sql`, **applied to production
+  2026-06-28**). It
   scopes a user to their drawers by matching `order.customer_email` to the auth email — a
   transitional bridge until the `customer` table is activated with a real `auth.users` link.
 - **Approval (`/approve/[id]`):** reuses the existing, already-deployed RPCs that the
