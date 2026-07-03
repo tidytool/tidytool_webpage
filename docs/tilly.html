@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tilly's Page 🌈</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive, sans-serif;
+      background: linear-gradient(180deg, #ffd6ec 0%, #fff3c4 35%, #c9f5ff 70%, #d9ffd6 100%);
+      color: #4a2c6b;
+      text-align: center;
+      overflow-x: hidden;
+    }
+    header { padding: 3rem 1rem 1rem; }
+    h1 {
+      font-size: clamp(2.5rem, 8vw, 5rem);
+      background: linear-gradient(90deg, #ff4fa0, #ff9d2e, #35c04b, #2e9dff, #a04fff);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: bounce 2s ease-in-out infinite;
+    }
+    @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    .subtitle { font-size: 1.3rem; margin-top: .5rem; }
+    section { padding: 2rem 1rem; max-width: 760px; margin: 0 auto; }
+    h2 { font-size: 2rem; margin-bottom: 1rem; }
+    .card {
+      background: rgba(255,255,255,.75);
+      border-radius: 24px;
+      padding: 1.5rem;
+      box-shadow: 0 6px 0 rgba(74,44,107,.15);
+      border: 4px dashed #ffb3d9;
+    }
+    .emoji-row { font-size: 3.5rem; line-height: 1.4; }
+    .emoji-row span { display: inline-block; cursor: pointer; transition: transform .15s; }
+    .emoji-row span:hover { transform: scale(1.4) rotate(-10deg); }
+    .wiggle { animation: wiggle 1.5s ease-in-out infinite; }
+    @keyframes wiggle { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+    svg { max-width: 100%; height: auto; }
+    footer { padding: 2rem; font-size: 1rem; }
+    a.home { color: #4a2c6b; font-weight: bold; }
+
+    /* floating hearts + giggles */
+    .floaty {
+      position: absolute; font-size: 1.6rem; pointer-events: none;
+      animation: floatup 1.4s ease-out forwards;
+    }
+    @keyframes floatup {
+      0% { opacity: 1; transform: translateY(0) scale(.6); }
+      100% { opacity: 0; transform: translateY(-90px) scale(1.4); }
+    }
+    .heart-stage { position: relative; }
+
+    /* Levi giggle bounce */
+    .giggling { animation: giggle .5s ease-in-out 3; }
+    @keyframes giggle {
+      0%,100% { transform: translateY(0) rotate(0); }
+      25% { transform: translateY(-12px) rotate(-4deg); }
+      75% { transform: translateY(-12px) rotate(4deg); }
+    }
+
+    /* growing popsicles */
+    #pops { transition: transform .3s cubic-bezier(.2,1.4,.4,1); transform-origin: bottom center; cursor: pointer; }
+
+    /* unicorns prancing across */
+    .unicorn-fly {
+      position: fixed; top: 18%; left: -80px; font-size: 3rem; z-index: 5; pointer-events: none;
+      animation: prance 16s linear infinite;
+    }
+    .unicorn-fly.two { top: 32%; animation-delay: 8s; font-size: 2.2rem; }
+    @keyframes prance {
+      0% { left: -80px; transform: translateY(0); }
+      25% { transform: translateY(-30px); }
+      50% { transform: translateY(0); }
+      75% { transform: translateY(-30px); }
+      100% { left: 110%; transform: translateY(0); }
+    }
+
+    /* sparkle trail */
+    .sparkle {
+      position: fixed; pointer-events: none; z-index: 60; font-size: 1.1rem;
+      animation: sparklefade .8s ease-out forwards;
+    }
+    @keyframes sparklefade {
+      0% { opacity: 1; transform: scale(.5) rotate(0); }
+      100% { opacity: 0; transform: scale(1.5) rotate(180deg) translateY(-20px); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="unicorn-fly">🦄</div>
+  <div class="unicorn-fly two">🦄</div>
+
+  <header>
+    <h1>🌈 Tilly's Page 🌈</h1>
+    <p class="subtitle">Shhh… this is a secret page just for Tilly! 🤫✨</p>
+  </header>
+
+  <section>
+    <div class="card">
+      <h2>🐱 Cats!</h2>
+      <p><strong>Click a cat to pet it!</strong></p>
+      <div class="emoji-row heart-stage" id="cats-row">
+        <span class="wiggle">🐱</span><span>🐈</span><span>😸</span><span>🐈‍⬛</span><span>😻</span><span class="wiggle">🙀</span>
+      </div>
+      <p>Meow meow meow! Purrrrrr…</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🧸 Toys!</h2>
+      <div class="emoji-row">
+        <span>🧸</span><span class="wiggle">🪀</span><span>🚂</span><span>🪁</span><span>🎠</span><span class="wiggle">🧩</span><span>🎨</span>
+      </div>
+      <p>So many toys to play with!</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>💖 Barbies!</h2>
+      <div class="emoji-row">
+        <span class="wiggle">👱‍♀️</span><span>👗</span><span>👠</span><span>👑</span><span>💅</span><span class="wiggle">🎀</span>
+      </div>
+      <p>Fabulous and fancy, just like Tilly!</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🎅 Santa Claus!</h2>
+      <div class="emoji-row">
+        <span class="wiggle">🎅</span><span>🦌</span><span>🛷</span><span>🎁</span><span>🎄</span><span class="wiggle">⛄</span>
+      </div>
+      <p>Ho ho ho! Have you been good this year?</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>👶 Baby Levi!</h2>
+      <p><strong>Click Levi to make him giggle!</strong></p>
+      <div class="heart-stage" id="levi-stage">
+      <svg id="levi" viewBox="0 0 200 200" width="220" role="button" aria-label="Baby Levi — click him to make him giggle" style="cursor:pointer;">
+        <!-- body -->
+        <ellipse cx="100" cy="165" rx="55" ry="32" fill="#9dd9ff"/>
+        <!-- head -->
+        <circle cx="100" cy="95" r="55" fill="#ffe0c2"/>
+        <!-- blonde hair -->
+        <path d="M52 80 Q60 30 100 32 Q140 30 148 80 Q135 60 100 58 Q65 60 52 80 Z" fill="#ffd94d"/>
+        <path d="M96 34 Q100 20 108 30 Q104 38 100 40 Z" fill="#ffd94d"/>
+        <!-- blue eyes -->
+        <circle cx="80" cy="95" r="8" fill="#3b82f6"/>
+        <circle cx="120" cy="95" r="8" fill="#3b82f6"/>
+        <circle cx="82.5" cy="92.5" r="2.5" fill="#fff"/>
+        <circle cx="122.5" cy="92.5" r="2.5" fill="#fff"/>
+        <!-- cheeks -->
+        <circle cx="68" cy="112" r="7" fill="#ffb3ad" opacity=".7"/>
+        <circle cx="132" cy="112" r="7" fill="#ffb3ad" opacity=".7"/>
+        <!-- smile -->
+        <path d="M85 118 Q100 132 115 118" stroke="#c96f4a" stroke-width="4" fill="none" stroke-linecap="round"/>
+      </svg>
+      </div>
+      <p>Say hi to baby Levi! Blonde hair, blue eyes, and the cutest smile. 💙</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>💨 A Toot!</h2>
+      <p><strong>Click the toot!! 🙉</strong></p>
+      <svg id="toot" viewBox="0 0 220 130" width="240" role="button" aria-label="A silly green toot cloud — click it to hear a fart" style="cursor:pointer;">
+        <ellipse cx="90" cy="65" rx="45" ry="32" fill="#b6e388"/>
+        <ellipse cx="135" cy="50" rx="35" ry="26" fill="#cdeea7"/>
+        <ellipse cx="150" cy="80" rx="30" ry="22" fill="#a8d97a"/>
+        <ellipse cx="60" cy="85" rx="28" ry="20" fill="#cdeea7"/>
+        <!-- stink lines -->
+        <path d="M35 40 Q30 30 35 20" stroke="#8bc34a" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M110 25 Q105 15 110 5" stroke="#8bc34a" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M190 55 Q195 45 190 35" stroke="#8bc34a" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <text x="105" y="72" text-anchor="middle" font-size="24" font-weight="bold" fill="#4a6b2c">TOOT!</text>
+      </svg>
+      <p>💨 Pfffttt! Excuse you!! 🤭😂</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>🍧 Popsicles!</h2>
+      <p><strong>Keep clicking the popsicles — they grow GIANT!</strong></p>
+      <svg id="pops" viewBox="0 0 300 140" width="280" role="button" aria-label="Three colorful popsicles — click to make them grow giant">
+        <!-- pink popsicle -->
+        <rect x="46" y="95" width="8" height="35" rx="4" fill="#c9975b"/>
+        <rect x="25" y="10" width="50" height="90" rx="24" fill="#ff6fa5"/>
+        <rect x="34" y="20" width="10" height="55" rx="5" fill="#ffffff" opacity=".5"/>
+        <!-- orange popsicle with bite -->
+        <rect x="146" y="95" width="8" height="35" rx="4" fill="#c9975b"/>
+        <path d="M125 34 A25 25 0 0 1 175 34 L175 76 A24 24 0 0 1 151 100 L149 100 A24 24 0 0 1 125 76 Z M158 10 A14 14 0 0 0 158 34 A14 14 0 0 0 175 24" fill="#ffa53b"/>
+        <rect x="134" y="30" width="10" height="45" rx="5" fill="#ffffff" opacity=".5"/>
+        <!-- blue popsicle -->
+        <rect x="246" y="95" width="8" height="35" rx="4" fill="#c9975b"/>
+        <rect x="225" y="10" width="50" height="90" rx="24" fill="#5bc9ff"/>
+        <rect x="234" y="20" width="10" height="55" rx="5" fill="#ffffff" opacity=".5"/>
+      </svg>
+      <p>Yummy yummy in Tilly's tummy! 🍧😋</p>
+      <p id="pops-msg" style="min-height:1.5em;"></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card" style="border-color:#ff9ecf;">
+      <h2>🏰 Princess Tilly's Castle!</h2>
+      <svg viewBox="0 0 360 240" width="330" role="img" aria-label="A pink princess castle with a rainbow">
+        <!-- rainbow -->
+        <path d="M30 200 A150 150 0 0 1 330 200" fill="none" stroke="#ff4fa0" stroke-width="10"/>
+        <path d="M42 200 A138 138 0 0 1 318 200" fill="none" stroke="#ff9d2e" stroke-width="10"/>
+        <path d="M54 200 A126 126 0 0 1 306 200" fill="none" stroke="#ffe14d" stroke-width="10"/>
+        <path d="M66 200 A114 114 0 0 1 294 200" fill="none" stroke="#35c04b" stroke-width="10"/>
+        <path d="M78 200 A102 102 0 0 1 282 200" fill="none" stroke="#2e9dff" stroke-width="10"/>
+        <!-- towers -->
+        <rect x="100" y="110" width="34" height="110" fill="#ffb3d9" stroke="#d96aa8" stroke-width="3"/>
+        <polygon points="100,110 117,72 134,110" fill="#ff4fa0"/>
+        <rect x="226" y="110" width="34" height="110" fill="#ffb3d9" stroke="#d96aa8" stroke-width="3"/>
+        <polygon points="226,110 243,72 260,110" fill="#ff4fa0"/>
+        <!-- middle keep -->
+        <rect x="134" y="130" width="92" height="90" fill="#ffc9e3" stroke="#d96aa8" stroke-width="3"/>
+        <rect x="160" y="95" width="40" height="45" fill="#ffb3d9" stroke="#d96aa8" stroke-width="3"/>
+        <polygon points="160,95 180,60 200,95" fill="#ff4fa0"/>
+        <!-- flags -->
+        <line x1="117" y1="72" x2="117" y2="52" stroke="#7a4a00" stroke-width="3"/>
+        <polygon points="117,52 137,58 117,64" fill="#a04fff"/>
+        <line x1="243" y1="72" x2="243" y2="52" stroke="#7a4a00" stroke-width="3"/>
+        <polygon points="243,52 263,58 243,64" fill="#a04fff"/>
+        <line x1="180" y1="60" x2="180" y2="38" stroke="#7a4a00" stroke-width="3"/>
+        <polygon points="180,38 202,45 180,52" fill="#ff4fa0"/>
+        <!-- door + windows -->
+        <path d="M166 220 L166 180 A14 14 0 0 1 194 180 L194 220 Z" fill="#a05a2c"/>
+        <circle cx="117" cy="140" r="7" fill="#fff" stroke="#d96aa8" stroke-width="2"/>
+        <circle cx="243" cy="140" r="7" fill="#fff" stroke="#d96aa8" stroke-width="2"/>
+        <circle cx="180" cy="115" r="7" fill="#fff" stroke="#d96aa8" stroke-width="2"/>
+        <!-- ground -->
+        <rect x="0" y="218" width="360" height="22" fill="#8fd97a" rx="8"/>
+        <text x="180" y="236" text-anchor="middle" font-size="11" fill="#4a6b2c">✿ ✿ ✿ ✿ ✿ ✿ ✿ ✿ ✿</text>
+      </svg>
+      <p>A castle fit for Princess Tilly, with a rainbow on top! 🌈👑</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Made with 💕 for Tilly</p>
+    <p><a class="home" href="/">🏠 Back to the boring grown-up page</a></p>
+  </footer>
+
+  <script>
+    // Click the toot — it makes a REAL fart sound! (synthesized, no audio file)
+    var tootEl = document.getElementById('toot');
+    var audioCtx = null;
+    function playFart() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var t = audioCtx.currentTime;
+      var dur = 0.5 + Math.random() * 0.4;
+
+      // low sputtery oscillator with falling pitch
+      var osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(90 + Math.random() * 40, t);
+      osc.frequency.exponentialRampToValueAtTime(35, t + dur);
+
+      // wobble (the "brrrt")
+      var lfo = audioCtx.createOscillator();
+      lfo.frequency.setValueAtTime(20 + Math.random() * 15, t);
+      var lfoGain = audioCtx.createGain();
+      lfoGain.gain.setValueAtTime(40, t);
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+
+      // muffle it
+      var filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(300, t);
+
+      // envelope
+      var gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.6, t + 0.03);
+      gain.gain.setValueAtTime(0.6, t + dur * 0.6);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+      osc.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t); lfo.start(t);
+      osc.stop(t + dur); lfo.stop(t + dur);
+
+      // squish the cloud while it toots
+      tootEl.style.transition = 'transform .1s';
+      tootEl.style.transform = 'scale(1.15, .85)';
+      setTimeout(function () { tootEl.style.transform = ''; }, dur * 1000);
+    }
+    tootEl.addEventListener('click', playFart);
+
+    function getCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    // Floating emoji helper (hearts, giggles...)
+    function floaty(stage, text, x) {
+      var f = document.createElement('div');
+      f.className = 'floaty';
+      f.textContent = text;
+      f.style.left = (x !== undefined ? x : (20 + Math.random() * 60)) + '%';
+      f.style.top = '30%';
+      stage.appendChild(f);
+      setTimeout(function () { f.remove(); }, 1400);
+    }
+
+    // Tap an emoji and it spins!
+    document.querySelectorAll('.emoji-row span').forEach(function (el) {
+      el.addEventListener('click', function () {
+        el.style.transition = 'transform .6s';
+        el.style.transform = 'rotate(360deg) scale(1.6)';
+        setTimeout(function () { el.style.transform = ''; }, 600);
+      });
+    });
+
+    // Cats purr with hearts when petted
+    function playPurr() {
+      var ctx = getCtx();
+      var t = ctx.currentTime, dur = 1.1;
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(55, t);
+      var lfo = ctx.createOscillator();       // rumble ~25Hz like a real purr
+      lfo.frequency.setValueAtTime(25, t);
+      var lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(0.4, t);
+      var gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.1);
+      gain.gain.setValueAtTime(0.35, t + dur * 0.7);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      var filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(220, t);
+      lfo.connect(lfoGain); lfoGain.connect(gain.gain);
+      osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+      osc.start(t); lfo.start(t); osc.stop(t + dur); lfo.stop(t + dur);
+    }
+    var catsRow = document.getElementById('cats-row');
+    catsRow.querySelectorAll('span').forEach(function (cat) {
+      cat.addEventListener('click', function () {
+        playPurr();
+        for (var i = 0; i < 4; i++) {
+          setTimeout(function () { floaty(catsRow, ['💕','💖','💗','😻'][Math.floor(Math.random()*4)]); }, i * 150);
+        }
+      });
+    });
+
+    // Baby Levi giggles!
+    function playGiggle() {
+      var ctx = getCtx();
+      var t = ctx.currentTime;
+      for (var i = 0; i < 4; i++) {           // four quick "hee" squeaks going up
+        var osc = ctx.createOscillator();
+        osc.type = 'sine';
+        var start = t + i * 0.16;
+        osc.frequency.setValueAtTime(500 + i * 90, start);
+        osc.frequency.exponentialRampToValueAtTime(750 + i * 90, start + 0.08);
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.13);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(start); osc.stop(start + 0.15);
+      }
+    }
+    var levi = document.getElementById('levi');
+    var leviStage = document.getElementById('levi-stage');
+    levi.addEventListener('click', function () {
+      playGiggle();
+      levi.classList.remove('giggling');
+      void levi.getBoundingClientRect(); // restart animation
+      levi.classList.add('giggling');
+      floaty(leviStage, '😄', 30);
+      floaty(leviStage, 'hee hee!', 55);
+      setTimeout(function () { floaty(leviStage, '😆', 45); }, 300);
+    });
+
+    // Popsicles grow GIANT, then POP back
+    var pops = document.getElementById('pops');
+    var popsMsg = document.getElementById('pops-msg');
+    var popScale = 1;
+    pops.addEventListener('click', function () {
+      popScale += 0.25;
+      if (popScale > 2.3) {
+        pops.style.transform = 'scale(.2)';
+        popsMsg.textContent = '💥 POP!! Too big!! Start again! 😂';
+        setTimeout(function () { popScale = 1; pops.style.transform = ''; }, 400);
+        return;
+      }
+      pops.style.transform = 'scale(' + popScale + ')';
+      popsMsg.textContent = popScale > 1.8 ? 'SOOO BIG!! One more click…! 👀' : 'Bigger!! Keep going! 🍧';
+    });
+
+    // Sparkle trail follows your finger / mouse
+    var lastSparkle = 0;
+    function trail(x, y) {
+      var now = Date.now();
+      if (now - lastSparkle < 60) return;
+      lastSparkle = now;
+      var s = document.createElement('div');
+      s.className = 'sparkle';
+      s.textContent = ['✨','⭐','💫'][Math.floor(Math.random()*3)];
+      s.style.left = (x - 8) + 'px';
+      s.style.top = (y - 8) + 'px';
+      document.body.appendChild(s);
+      setTimeout(function () { s.remove(); }, 800);
+    }
+    document.addEventListener('mousemove', function (e) { trail(e.clientX, e.clientY); });
+    document.addEventListener('touchmove', function (e) { trail(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  </script>
+</body>
+</html>
