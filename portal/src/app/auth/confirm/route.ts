@@ -22,12 +22,19 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
 
+  // Invite and recovery links always land on the set-password screen, so the
+  // customer can establish a password regardless of the `next` param.
+  const dest =
+    type === "recovery" || type === "invite" ? "/set-password" : next;
+
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash });
-    if (!error) return NextResponse.redirect(new URL(next, origin));
+    if (!error) return NextResponse.redirect(new URL(dest, origin));
   } else if (code) {
+    // PKCE flow (default templates) carries no `type`; honor `next`, which the
+    // login page sets to /set-password for recovery links.
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL(next, origin));
+    if (!error) return NextResponse.redirect(new URL(dest, origin));
   }
 
   return NextResponse.redirect(new URL("/login?error=link", origin));
