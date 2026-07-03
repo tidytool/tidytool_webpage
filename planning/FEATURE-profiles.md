@@ -1,6 +1,15 @@
 # Feature spec — Customer profiles, QR drawer pages, and design approval
 
-**Status:** Proposed · **Owner:** Sam · **Date:** 2026-06-12
+> **⚠ Partially superseded (2026-07-03) by `planning/ARCHITECTURE.md`.** The
+> architecture sections below (vanilla-only portal, magic-link-only auth, `qr_token`
+> column, `customers/projects` schema) predate the shipped reality: the account hub
+> is a Next.js app at `app.thetidytool.com` with password auth, the QR token is the
+> drawer uuid, and the durable data model is customer/organization/order per
+> ARCHITECTURE.md. **Still valid here:** the business rationale, the QR-permanence
+> rules, the label-entry/approval UX spec (Phase B — waiting on tidyCAM tool names),
+> and the "nothing is cut without an approval row" rule.
+
+**Status:** Proposed 2026-06-12 · superseded in part 2026-07-03 · **Owner:** Sam
 **Pricing decision:** Included free with every order. We charge for atoms (foam, engraving, redesigns), not bits.
 
 ## Goal

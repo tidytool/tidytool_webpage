@@ -10,7 +10,7 @@ is where a framework is allowed).
 ## Stack
 
 - **Next.js 15** (App Router, React Server Components, TypeScript)
-- **Supabase** auth (email magic link) via `@supabase/ssr`
+- **Supabase** auth (email + password; magic-link for first-time setup/recovery) via `@supabase/ssr`
 - No UI library — brand tokens in `src/app/globals.css` mirror the marketing site
 
 ## Local setup
@@ -102,6 +102,13 @@ page) to send customers to `https://app.thetidytool.com`.
 
 ### 4. Before public launch — required
 
-- **Close the RLS hole:** the anon key can currently read every `drawer` and `employee` row
-  directly (see ROADMAP "Supabase database hardening"). Lock this down first.
+- ~~Close the RLS hole~~ **Done 2026-07-03** (migrations `0002` + `0003`, applied to prod).
 - **Remove `[TEST]` rows** seeded for development (nicknames prefixed `[TEST]`).
+
+## Status & direction (2026-07-03)
+
+**Launched** at `https://app.thetidytool.com` (Vercel prod, Squarespace CNAME). Direction
+doc: `planning/ARCHITECTURE.md`. This repo **owns DB migrations**
+(`portal/supabase/migrations/`); tidyCAM consumes types and never migrates. Next build
+steps: schema baseline → durable customer/org model (replaces the transitional
+`get_my_drawers` email matching) → lifecycle events/timeline → notifications → admin view.

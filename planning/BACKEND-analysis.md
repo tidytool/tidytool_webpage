@@ -1,6 +1,13 @@
 # Backend analysis & change-safety plan — Supabase `tidytool`
 
-**Author:** Backend/DB review (Cowork) · **Date:** 2026-06-27 · **Status:** Analysis only — no changes made
+**Author:** Backend/DB review (Cowork) · **Date:** 2026-06-27 · **Status:** Analysis; partially executed
+
+> **Update 2026-07-03:** security findings §4.1–4.4 are **CLOSED** (migrations
+> `0002_harden_anon_reads` + `0003_harden_round2`, applied to prod). Still open:
+> §4.5 Postgres upgrade, §4.6 leaked-password protection, §4.7 perf nits, §3d
+> backup-table drop (after baseline). Open question §9.5 (migration ownership)
+> **DECIDED by Sam:** migrations live in THIS repo (`portal/supabase/migrations/`);
+> tidyCAM consumes, never migrates. Direction doc: `planning/ARCHITECTURE.md`.
 **Project:** `tidytool` (ref `tkrrvpoupekrjqditupi`), Pro plan, Postgres 17.4, region us-west-1, compute `nano`
 
 This is a read-only audit of the live database, storage, and config, measured against what
