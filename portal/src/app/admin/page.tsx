@@ -1,7 +1,4 @@
-import { redirect } from "next/navigation";
-import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/server";
-import { getClaims } from "@/lib/supabase/auth";
 import {
   type AdminPipelineRow,
   type AdminOrphanOrder,
@@ -121,14 +118,7 @@ function OrphanCard({ o, customers }: { o: AdminOrphanOrder; customers: AdminCus
 }
 
 export default async function AdminPage() {
-  const claims = await getClaims();
-  if (!claims) redirect("/login");
-  const email = (claims.email as string | undefined) ?? undefined;
-
   const supabase = await createClient();
-  const { data: isAdmin, error: adminError } = await supabase.rpc("is_admin");
-  if (adminError || !isAdmin) redirect("/");
-
   const [pipelineRes, orphansRes, customersRes] = await Promise.all([
     supabase.rpc("get_admin_pipeline"),
     supabase.rpc("get_admin_orphan_orders"),
@@ -142,7 +132,6 @@ export default async function AdminPage() {
 
   return (
     <>
-      <Header email={email} />
       <main className="wrap">
         <p className="eyebrow">Admin</p>
         <h1>Pipeline</h1>

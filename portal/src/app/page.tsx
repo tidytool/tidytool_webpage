@@ -73,8 +73,12 @@ export default async function DashboardPage() {
   const email = (claims.email as string | undefined) ?? undefined;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_my_drawers");
+  const [{ data, error }, adminRes] = await Promise.all([
+    supabase.rpc("get_my_drawers"),
+    supabase.rpc("is_admin"),
+  ]);
   const drawers = (data ?? []) as MyDrawer[];
+  const isAdmin = adminRes.data === true;
 
   // The get_my_drawers RPC is staged in supabase/migrations and may not be applied yet.
   const migrationPending =
@@ -82,7 +86,7 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <Header email={email} />
+      <Header email={email} isAdmin={isAdmin} />
       <main className="wrap">
         <p className="eyebrow">Your designs</p>
         <h1>Welcome back</h1>
