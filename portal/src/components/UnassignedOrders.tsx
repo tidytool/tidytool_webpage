@@ -59,7 +59,7 @@ export function UnassignedOrders({
     const n = selected.size;
     if (!window.confirm(
       `Permanently delete ${n} order${n === 1 ? "" : "s"} and their drawers?\n` +
-      `A full copy is kept in the audit log.`,
+      `A full copy is kept in History.`,
     )) return;
     setError(null);
     startTransition(async () => {

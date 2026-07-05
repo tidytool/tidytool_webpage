@@ -114,7 +114,8 @@ export async function createOrgAction(formData: FormData) {
   if (!name) throw new Error("Organization name required.");
   const supabase = await createClient();
   const { error } = await supabase.rpc("admin_create_organization", { p_name: name });
-  if (error) throw new Error(error.message);
+  if (error) redirect(`/admin/organizations?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/organizations");
   revalidatePath("/admin/customers");
 }
 
@@ -225,7 +226,8 @@ export async function deleteOrgAction(formData: FormData) {
   const { error } = await supabase.rpc("admin_delete_organization", {
     p_organization_id: orgId,
   });
-  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  if (error) redirect(`/admin/organizations?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/organizations");
   revalidatePath("/admin/customers");
 }
 
@@ -238,7 +240,8 @@ export async function renameOrgAction(formData: FormData) {
     p_organization_id: orgId,
     p_name: name,
   });
-  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  if (error) redirect(`/admin/organizations?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/organizations");
   revalidatePath("/admin/customers");
 }
 
@@ -273,6 +276,67 @@ export async function bulkDeleteOrders(
   revalidatePath("/admin");
   revalidatePath("/admin/orders");
   return { deleted: (data as { deleted?: number })?.deleted ?? orderIds.length };
+}
+
+/** Bulk delete customers (unlinks their orders first). Client-callable. */
+export async function bulkDeleteCustomers(
+  customerIds: string[],
+): Promise<{ error?: string; deleted?: number }> {
+  if (!customerIds.length) return { error: "No customers selected." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_delete_customers", {
+    p_customer_ids: customerIds,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin/customers");
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  return { deleted: (data as { deleted?: number })?.deleted ?? customerIds.length };
+}
+
+/** Bulk delete empty organizations. Client-callable. */
+export async function bulkDeleteOrganizations(
+  orgIds: string[],
+): Promise<{ error?: string; deleted?: number }> {
+  if (!orgIds.length) return { error: "No organizations selected." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_delete_organizations", {
+    p_organization_ids: orgIds,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin/organizations");
+  revalidatePath("/admin/customers");
+  return { deleted: (data as { deleted?: number })?.deleted ?? orgIds.length };
+}
+
+/** Bulk hard-delete drawers (+ their events). Client-callable. */
+export async function bulkDeleteDrawers(
+  drawerIds: string[],
+): Promise<{ error?: string; deleted?: number }> {
+  if (!drawerIds.length) return { error: "No drawers selected." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_delete_drawers", {
+    p_drawer_ids: drawerIds,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin");
+  return { deleted: (data as { deleted?: number })?.deleted ?? drawerIds.length };
+}
+
+/** Bulk mark drawers delivered with one shared note. Client-callable. */
+export async function bulkMarkDelivered(
+  drawerIds: string[],
+  note: string,
+): Promise<{ error?: string; delivered?: number }> {
+  if (!drawerIds.length) return { error: "No drawers selected." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_mark_delivered", {
+    p_drawer_ids: drawerIds,
+    p_note: note.trim() || null,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin");
+  return { delivered: (data as { delivered?: number })?.delivered ?? drawerIds.length };
 }
 
 export async function markDeliveredAction(formData: FormData) {

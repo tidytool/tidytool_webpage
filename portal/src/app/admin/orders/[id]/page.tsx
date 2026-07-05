@@ -89,7 +89,7 @@ export default async function AdminOrderDetailPage({
       <section className="card" style={{ marginTop: "1.1rem" }}>
         <h2>Edit order</h2>
         <p className="muted" style={{ fontSize: "0.85rem", margin: "0.2rem 0 0.9rem" }}>
-          Blank fields stay unchanged. Every save is written to the audit log.
+          Blank fields stay unchanged. Every save is recorded in History.
         </p>
         <form action={updateOrderAction} style={{ display: "grid", gap: "0.7rem", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           <input type="hidden" name="order_id" value={o.id} />
@@ -201,7 +201,7 @@ export default async function AdminOrderDetailPage({
         <p className="muted" style={{ fontSize: "0.88rem", margin: "0.2rem 0 0.8rem" }}>
           Permanently deletes this order, its {detail.drawers.length} drawer
           {detail.drawers.length === 1 ? "" : "s"}, and their event history.
-          A full copy is written to the audit log first.
+          A full copy is recorded in History first.
         </p>
         <form action={deleteOrderAction}>
           <input type="hidden" name="order_id" value={o.id} />

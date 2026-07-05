@@ -6,7 +6,8 @@ const TABS = [
   { href: "/admin", label: "Pipeline" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/customers", label: "Customers" },
-  { href: "/admin/audit", label: "Audit" },
+  { href: "/admin/organizations", label: "Organizations" },
+  { href: "/admin/history", label: "History" },
 ];
 
 /** Segmented admin nav with an active state (why: orientation was the #1

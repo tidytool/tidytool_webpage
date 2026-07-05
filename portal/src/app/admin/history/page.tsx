@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 const GRID = "minmax(160px, 1.2fr) minmax(140px, 1fr) minmax(120px, 2fr) 10rem";
 
-export default async function AdminAuditPage() {
+export default async function AdminHistoryPage() {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_admin_audit", { p_limit: 200 });
   const rows = (data ?? []) as AdminAuditRow[];
@@ -15,7 +15,7 @@ export default async function AdminAuditPage() {
       <div className="page-head">
         <div>
           <p className="eyebrow">Admin</p>
-          <h1>Audit log</h1>
+          <h1>History</h1>
           <p className="muted sub">
             Append-only record of every admin change (latest 200). This log
             cannot be edited or deleted, by anyone.
@@ -24,7 +24,7 @@ export default async function AdminAuditPage() {
       </div>
       {error ? <p className="banner--err" role="alert">{error.message}</p> : null}
 
-      <div className="table" role="table" aria-label="Audit log">
+      <div className="table" role="table" aria-label="History">
         <div className="trow trow--head" role="row" style={{ gridTemplateColumns: GRID }}>
           <span>Action</span>
           <span>Table</span>

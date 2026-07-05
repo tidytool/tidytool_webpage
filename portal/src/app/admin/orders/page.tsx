@@ -1,12 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
-import { type AdminOrderRow, type AdminCustomer, formatCents } from "@/lib/types";
+import { type AdminOrderRow, type AdminCustomer } from "@/lib/types";
 import { createOrderAction } from "../actions";
+import { OrdersTable } from "@/components/OrdersTable";
 
 export const dynamic = "force-dynamic";
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
 
 type Search = { q?: string; org?: string; email?: string; from?: string; to?: string; error?: string };
 
@@ -24,8 +21,6 @@ function hrefWithout(sp: Search, drop: string) {
   const qs = params.toString();
   return qs ? `/admin/orders?${qs}` : "/admin/orders";
 }
-
-const GRID = "minmax(220px, 2fr) minmax(140px, 1.2fr) 5rem 6.5rem 7.5rem";
 
 export default async function AdminOrdersPage({
   searchParams,
@@ -177,38 +172,7 @@ export default async function AdminOrdersPage({
         </form>
       </details>
 
-      <div className="table" role="table" aria-label="Orders">
-        <div className="trow trow--head" role="row" style={{ gridTemplateColumns: GRID }}>
-          <span>Customer / project</span>
-          <span>Organization</span>
-          <span className="tr-right">Drawers</span>
-          <span className="tr-right">Total</span>
-          <span className="tr-right">Created</span>
-        </div>
-        {orders.length === 0 ? (
-          <div className="trow muted" style={{ gridTemplateColumns: "1fr" }}>
-            No orders match. <a href="/admin/orders">Clear filters</a>
-          </div>
-        ) : (
-          orders.map((o) => (
-            <a key={o.order_id} className="trow" href={`/admin/orders/${o.order_id}`} style={{ gridTemplateColumns: GRID }}>
-              <span>
-                <span className="primary">{o.customer_name || "Unknown"}</span>
-                {o.project_name ? <span className="muted"> — {o.project_name}</span> : null}
-                <br />
-                <span className="sub">
-                  {o.customer_email || "no email"}
-                  {!o.customer_id ? <> · <span className="badge badge--warn">Unassigned</span></> : null}
-                </span>
-              </span>
-              <span className="sub hide-sm">{o.organization_name ?? "—"}</span>
-              <span className="tr-right num hide-sm">{o.drawer_rows}</span>
-              <span className="tr-right num">{formatCents(o.total_price) ?? "—"}</span>
-              <span className="tr-right sub num hide-sm">{fmtDate(o.created_at)}</span>
-            </a>
-          ))
-        )}
-      </div>
+      <OrdersTable orders={orders} customers={customers} />
     </main>
   );
 }

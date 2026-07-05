@@ -229,6 +229,8 @@ input[type="checkbox"] {
 }
 .trow:first-child { border-top: none; }
 a.trow:hover { background: #fbfcfd; text-decoration: none; }
+.trow--click { cursor: pointer; }
+.trow--click:hover { background: #fbfcfd; }
 .trow--head {
   padding-top: 0.55rem; padding-bottom: 0.55rem;
   background: var(--c-surface-2);
