@@ -33,6 +33,14 @@ Pillar 2's job: once someone buys, give them one signed-in place to review and a
 - ✅ "Designed and cut in Logan, Utah" in footer and CTA section.
 - ✅ Localized title tag: "Custom Foam Tool Organizers for Lean Manufacturing | TidyTool — Logan, Utah."
 
+**Conversion redesign (2026-07-05, branch `feature/landing-conversion-redesign`, awaiting Sam's preview approval).**
+
+- Pain-led hero ("Stop losing tools. Stop losing time.") with proof photo; social proof (testimonial + gallery + case study) moved directly under the hero.
+- Flow now: pain → proof → process → why-it-works (Real Costs / Lean / Why / Materials merged) → segments → form. Stat strip and mid-page CTA band cut.
+- CTA renamed site-wide: "Get a Fast Quote"/"New Customer" → **"Get Started"** (the conversion is scheduling the consult call).
+- Added `docs/privacy.html` + footer link (form collects lead data; no legal page existed).
+- Spec: `planning/FEATURE-landing-conversion-redesign.md`. Still owner-side: Tally form — make "How did you hear about us?" optional; collect 1–2 more testimonials; higher-res install photos (current 360×480 is soft as a hero image).
+
 ## Phase 2 — Local visibility, brand-hedged (weeks 5–8)
 
 Hedge rule: build assets that survive a rename. Hold anything that compounds under the "TidyTool" name.
@@ -77,10 +85,7 @@ These are human tasks that require Sam's direct involvement. They are tracked he
 - [ ] **GBP setup:** Follow `planning/gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
 - [ ] **Testimonial:** Fill in the `[TODO]` placeholders on the homepage proof section and the case study page (`case-study-technical-college.html`). Get written permission from your contact before publishing their name and title.
 - [ ] **Rebrand decision deadline:** September 2026. Every month undecided is a month of unbuilt domain equity. Set a calendar reminder. All current Phase 2 assets (GBP, landing pages, schema) are brand-neutral and survive a rename.
-- [x] **Supabase database hardening (security debt, deferred 2026-06-24).** _Done 2026-07-03: `0002_harden_anon_reads.sql` fully applied to prod. Verified: anon reads 0 rows from `drawer`/`employee`; `get_public_drawer(id)` still returns the public-safe row for a known id; deployed `docs/` pages only use RPCs. Round 2 applied 2026-07-03 (`portal/supabase/migrations/0003_harden_round2.sql`): `is_admin()` anon-revoked, duplicate `drawer` INSERT/UPDATE policies dropped, whole-bucket listing of `drawer-assets` closed. Still open: leaked-password protection (Sam, dashboard), Postgres patch upgrade._ Original scope:
-  - `drawer` table has a `"Enable read access for all users"` policy (anon SELECT, `qual = true`) — the anon key can read **every column of every drawer**, including internal fields (`created_by`, `order_id`, `dxf_url`, `point_cloud_url`). Replace with a `SECURITY DEFINER` function `get_public_drawer(id)` returning only public-safe fields (`nickname`, `photo_url`, `dimensions`, `status`), then drop the blanket policy. (Won't break tidyCAM — the app reads as the authenticated owner.)
-  - `employee` table has the same `"Enable read access for all users"` policy — anon can read employee names, phones, catchphrases. Remove/restrict; unrelated to the QR feature but a live PII exposure.
-  - Re-verify after changes: anon can still read a drawer by `id`, but cannot list all drawers, read internal columns, or read the `employee`/`order`/`customer` tables.
+- [x] ✅ **Supabase database hardening — done 2026-07-03.** Anon blanket reads on `drawer`/`employee` closed (`0002_harden_anon_reads.sql`; public QR page uses `get_public_drawer()` RPC); round 2 (`0003_harden_round2.sql`) revoked anon `is_admin()`, dropped duplicate policies, closed whole-bucket listing. All verified against prod. Still open elsewhere: leaked-password protection (Sam, dashboard) and Postgres patch upgrade — tracked in `planning/portal-launch-runbook.md`.
 
 ---
 
