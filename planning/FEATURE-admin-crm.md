@@ -33,6 +33,21 @@ cut down to a solo-operator shop with ~100 drawers:
 
 v1 = T3.5 (this ticket). v2 = T3.6 backlog, pull forward only if needed.
 
+## Sam's feature callouts (2026-07-05) — all v1
+
+1. **Admin tab in the portal nav** when the signed-in account is an admin → links to
+   `/admin`. (Header gets an `isAdmin` prop from the server layout; no client-side
+   role sniffing.)
+2. **Order-list filters for cleanup work:** date range, organization, customer email —
+   on top of the stage/approval filters already spec'd. Filters must combine.
+3. **Order detail loads drawer media:** photo inline on first click (98/100 drawers
+   have jpg/png in the public bucket). "Load 3D model" as an explicit second click —
+   measured against the live data (37 drawers have models: `.usdz` + `.ply`):
+   - `.usdz` → plain link; Apple QuickLook renders it natively on macOS/iOS (Sam's
+     hardware). Zero new dependencies.
+   - `.ply` → download link in v1. In-browser rendering needs a three.js-class
+     dependency → **v2, gated on dependency sign-off** per the house rules.
+
 ## Edit allowlists — the guardrail that keeps this safe
 
 **Order (editable):** `customer_name`, `customer_email`*, `customer_phone`,
@@ -81,8 +96,10 @@ changes. No T3.5 RPC is callable by non-admins; the customer UI does not change.
    `admin_update_order`, `admin_update_customer`, `admin_update_drawer_nickname`,
    `admin_merge_customers`, `admin_create_organization`,
    `admin_assign_customer_organization`, `admin_search` (or per-page query RPCs).
-2. **Portal (T3.5b):** order detail page (`/admin/orders/[id]`) with inline edit forms;
-   customer list + detail/edit (`/admin/customers`); merge flow with confirm step;
-   search box + stage/approval/date filters on the pipeline; audit log view
+2. **Portal (T3.5b):** admin tab in the nav (admin accounts only); order detail page
+   (`/admin/orders/[id]`) with inline edit forms + drawer photos + 3D-model links
+   (usdz QuickLook / ply download); customer list + detail/edit (`/admin/customers`);
+   merge flow with confirm step; search box + combinable filters (date range,
+   organization, customer email, stage, approval state); audit log view
    (`/admin/audit`, read-only).
 3. Ship behind the existing `/admin` gate; ROADMAP + this doc updated on completion.
