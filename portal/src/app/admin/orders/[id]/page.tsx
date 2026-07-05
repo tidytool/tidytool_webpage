@@ -10,26 +10,22 @@ import {
   updateNicknameAction,
   markDeliveredAction,
   assignOrderAction,
+  deleteOrderAction,
 } from "../../actions";
+import { ConfirmButton } from "@/components/ConfirmButton";
 
 export const dynamic = "force-dynamic";
 
 function Model3D({ url }: { url: string }) {
   const isUsdz = url.toLowerCase().endsWith(".usdz");
   return (
-    <details style={{ marginTop: "0.4rem" }}>
-      <summary className="muted" style={{ cursor: "pointer", fontSize: "0.85rem" }}>
-        Load 3D model
-      </summary>
+    <details className="reveal" style={{ marginTop: "0.4rem" }}>
+      <summary>Load 3D model</summary>
       <p style={{ margin: "0.4rem 0 0", fontSize: "0.9rem" }}>
         {isUsdz ? (
-          <a href={url} rel="ar noopener noreferrer">
-            Open scan in 3D (QuickLook) →
-          </a>
+          <a href={url} rel="ar noopener noreferrer">Open scan in 3D (QuickLook) →</a>
         ) : (
-          <a href={url} download>
-            Download model file →
-          </a>
+          <a href={url} download>Download model file →</a>
         )}
       </p>
     </details>
@@ -38,10 +34,13 @@ function Model3D({ url }: { url: string }) {
 
 export default async function AdminOrderDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const supabase = await createClient();
   const [detailRes, custRes] = await Promise.all([
     supabase.rpc("get_admin_order_detail", { p_order_id: id }),
@@ -50,9 +49,9 @@ export default async function AdminOrderDetailPage({
 
   if (detailRes.error) {
     return (
-      <main className="wrap">
+      <main className="wrap wrap--wide">
         <h1>Order</h1>
-        <p className="muted">{detailRes.error.message}</p>
+        <p className="banner--err">{detailRes.error.message}</p>
       </main>
     );
   }
@@ -61,65 +60,77 @@ export default async function AdminOrderDetailPage({
   const o = detail.order;
 
   return (
-    <main className="wrap">
-      <p className="eyebrow">
+    <main className="wrap wrap--wide">
+      <p className="eyebrow" style={{ marginTop: "0.25rem" }}>
         <a href="/admin/orders">← Orders</a>
       </p>
-      <h1>{o.project_name || o.customer_name || "Order"}</h1>
-      <p className="muted">
-        Created {new Date(o.created_at).toLocaleDateString()} ·{" "}
-        {formatCents(o.total_price) ?? "no price"} ·{" "}
-        {detail.customer
-          ? `Linked to ${detail.customer.name || detail.customer.email}`
-          : "UNASSIGNED"}
-        {detail.organization ? ` (${detail.organization.name})` : ""}
-      </p>
+      <div className="page-head">
+        <div>
+          <h1>{o.project_name || o.customer_name || "Order"}</h1>
+          <p className="muted sub">
+            Created {new Date(o.created_at).toLocaleDateString()} ·{" "}
+            <span className="num">{formatCents(o.total_price) ?? "no price"}</span>
+          </p>
+        </div>
+        <div>
+          {detail.customer ? (
+            <span className="chip">
+              {detail.customer.name || detail.customer.email}
+              {detail.organization ? <strong>{detail.organization.name}</strong> : null}
+            </span>
+          ) : (
+            <span className="badge badge--warn">Unassigned</span>
+          )}
+        </div>
+      </div>
 
-      <section className="card" style={{ marginTop: "1rem" }}>
-        <h2 style={{ fontSize: "1.1rem" }}>Edit order</h2>
-        <p className="muted" style={{ fontSize: "0.85rem", margin: "0.2rem 0 0.8rem" }}>
+      {sp.error ? <p className="banner--err" role="alert">{sp.error}</p> : null}
+
+      <section className="card" style={{ marginTop: "1.1rem" }}>
+        <h2>Edit order</h2>
+        <p className="muted" style={{ fontSize: "0.85rem", margin: "0.2rem 0 0.9rem" }}>
           Blank fields stay unchanged. Every save is written to the audit log.
         </p>
-        <form action={updateOrderAction} style={{ display: "grid", gap: "0.6rem", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <form action={updateOrderAction} style={{ display: "grid", gap: "0.7rem", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           <input type="hidden" name="order_id" value={o.id} />
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Customer name</span>
-            <input name="customer_name" defaultValue={o.customer_name ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Customer name</span>
+            <input name="customer_name" defaultValue={o.customer_name ?? ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Customer email</span>
-            <input name="customer_email" type="email" defaultValue={o.customer_email ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Customer email</span>
+            <input name="customer_email" type="email" defaultValue={o.customer_email ?? ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Phone</span>
-            <input name="customer_phone" defaultValue={o.customer_phone ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Phone</span>
+            <input name="customer_phone" defaultValue={o.customer_phone ?? ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Project</span>
-            <input name="project_name" defaultValue={o.project_name ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Project</span>
+            <input name="project_name" defaultValue={o.project_name ?? ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Location</span>
-            <input name="location" defaultValue={o.location ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Location</span>
+            <input name="location" defaultValue={o.location ?? ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Price ($)</span>
-            <input name="total_price_dollars" inputMode="decimal" defaultValue={o.total_price != null ? (o.total_price / 100).toFixed(2) : ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Price ($)</span>
+            <input name="total_price_dollars" inputMode="decimal" defaultValue={o.total_price != null ? (o.total_price / 100).toFixed(2) : ""} />
           </label>
-          <label>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Drawer count</span>
-            <input name="drawer_count" type="number" min="0" defaultValue={o.drawer_count ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl">
+            <span>Drawer count</span>
+            <input name="drawer_count" type="number" min="0" defaultValue={o.drawer_count ?? ""} />
           </label>
-          <label style={{ gridColumn: "1 / -1" }}>
-            <span className="muted" style={{ fontSize: "0.8rem" }}>Notes</span>
-            <input name="notes" defaultValue={o.notes ?? ""} style={{ width: "100%" }} />
+          <label className="ctrl" style={{ gridColumn: "1 / -1" }}>
+            <span>Notes</span>
+            <input name="notes" defaultValue={o.notes ?? ""} />
           </label>
           <div>
-            <button className="btn btn--ghost" type="submit">Save order</button>
+            <button className="btn btn--primary" type="submit">Save order</button>
           </div>
         </form>
 
-        <form action={assignOrderAction} style={{ display: "flex", gap: "0.5rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
+        <form action={assignOrderAction} style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap", borderTop: "1px solid var(--c-border)", paddingTop: "1rem" }}>
           <input type="hidden" name="order_id" value={o.id} />
           <select name="customer_id" required defaultValue="" style={{ flex: "1 1 220px" }}>
             <option value="" disabled>
@@ -139,7 +150,7 @@ export default async function AdminOrderDetailPage({
       </section>
 
       <section style={{ marginTop: "1.5rem" }}>
-        <h2 style={{ fontSize: "1.2rem" }}>Drawers ({detail.drawers.length})</h2>
+        <h2>Drawers <span className="muted num" style={{ fontWeight: 500 }}>({detail.drawers.length})</span></h2>
         <div style={{ display: "grid", gap: "1rem", marginTop: "0.75rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
           {detail.drawers.map((d) => {
             const stage = d.status ? STATUS_LABELS[d.status] ?? d.status : "—";
@@ -183,6 +194,24 @@ export default async function AdminOrderDetailPage({
             );
           })}
         </div>
+      </section>
+
+      <section className="card card--danger" style={{ marginTop: "1.5rem" }}>
+        <h2 style={{ color: "var(--c-danger)" }}>Danger zone</h2>
+        <p className="muted" style={{ fontSize: "0.88rem", margin: "0.2rem 0 0.8rem" }}>
+          Permanently deletes this order, its {detail.drawers.length} drawer
+          {detail.drawers.length === 1 ? "" : "s"}, and their event history.
+          A full copy is written to the audit log first.
+        </p>
+        <form action={deleteOrderAction}>
+          <input type="hidden" name="order_id" value={o.id} />
+          <ConfirmButton
+            message={`Delete this order and its ${detail.drawers.length} drawer(s)? This cannot be undone from the UI.`}
+            requireText="DELETE"
+          >
+            Delete order
+          </ConfirmButton>
+        </form>
       </section>
     </main>
   );
