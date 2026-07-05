@@ -93,6 +93,79 @@ export type AdminCustomer = {
   organization_name: string | null;
 };
 
+/** Row from get_admin_orders(filters) — the admin orders list. */
+export type AdminOrderRow = {
+  order_id: string;
+  created_at: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  project_name: string | null;
+  location: string | null;
+  notes: string | null;
+  drawer_count: number | null;
+  /** Integer CENTS. */
+  total_price: number | null;
+  customer_id: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
+  drawer_rows: number;
+};
+
+/** Drawer entry inside get_admin_order_detail(). */
+export type AdminDetailDrawer = {
+  id: string;
+  nickname: string | null;
+  status: string | null;
+  customer_approval_status: ApprovalStatus;
+  current_revision: number | null;
+  photo_url: string | null;
+  point_cloud_url: string | null;
+  design_preview_url: string | null;
+  dxf_url: string | null;
+  created_at: string;
+};
+
+/** Shape of get_admin_order_detail(p_order_id). */
+export type AdminOrderDetail = {
+  order: Record<string, unknown> & {
+    id: string;
+    created_at: string;
+    customer_name: string | null;
+    customer_email: string | null;
+    customer_phone: string | null;
+    project_name: string | null;
+    location: string | null;
+    notes: string | null;
+    drawer_count: number | null;
+    total_price: number | null;
+    customer_id: string | null;
+  };
+  customer: { id: string; name: string | null; email: string | null; phone: string | null } | null;
+  organization: { id: string; name: string } | null;
+  drawers: AdminDetailDrawer[];
+};
+
+/** Row from get_admin_audit(). */
+export type AdminAuditRow = {
+  id: string;
+  actor: string;
+  action: string;
+  table_name: string;
+  row_id: string | null;
+  before: unknown;
+  after: unknown;
+  created_at: string;
+};
+
+/** Integer cents → "$1,234.56" (total_price is CENTS everywhere). */
+export function formatCents(cents: number | null | undefined): string | null {
+  if (cents == null) return null;
+  return `$${(cents / 100).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export function formatDimensions(dim: unknown): string | null {
   if (!dim) return null;
   let d = dim;
