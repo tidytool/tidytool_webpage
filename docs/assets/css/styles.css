@@ -104,17 +104,17 @@ p  { margin: 0 0 1rem; }
 .hero h1 { max-width: 16ch; }
 .hero .lead { margin-bottom: 2rem; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: .9rem; }
-
-/* ---------- Stat strip — single dark contrast band ---------- */
-.stat-strip { background: #1E2A33; }
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
-.stat {
-  padding: 1.6rem 1rem; text-align: center;
-  border-right: 1px solid rgba(255,255,255,.1);
+.hero-wrap {
+  display: grid; grid-template-columns: 1.15fr .85fr;
+  gap: 2.5rem; align-items: center;
 }
-.stat:last-child { border-right: 0; }
-.stat .num { font-size: 1.8rem; font-weight: 800; color: var(--c-accent); }
-.stat .label { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: rgba(255,255,255,.6); }
+.hero-media img {
+  width: 100%; max-width: 400px; height: auto;
+  margin-left: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--shadow);
+}
 
 /* ---------- Generic card grids ---------- */
 .grid { display: grid; gap: 1.25rem; }
@@ -141,23 +141,6 @@ p  { margin: 0 0 1rem; }
 .steps { counter-reset: step; }
 .step .kicker::before { content: "Step " counter(step, decimal-leading-zero) " · "; }
 .step { counter-increment: step; }
-
-/* ---------- Mid-page CTA band ---------- */
-.cta-band {
-  background: var(--c-accent);
-  padding: 1.25rem 0;
-  text-align: center;
-}
-.cta-band p {
-  margin: 0; color: #fff; font-size: 1.05rem; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 1rem;
-  flex-wrap: wrap; justify-content: center;
-}
-.cta-band a.btn--ghost {
-  border-color: rgba(255,255,255,.8); color: #fff;
-  padding: .5rem 1.2rem; font-size: .9rem;
-}
-.cta-band a.btn--ghost:hover { background: rgba(255,255,255,.15); }
 
 /* ---------- Quote / CTA ---------- */
 .cta {
@@ -260,10 +243,10 @@ p  { margin: 0 0 1rem; }
   .grid--3, .grid--4, .grid--5, .cost-grid { grid-template-columns: repeat(2, 1fr); }
   .cta-wrap { grid-template-columns: 1fr; }
   .gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .hero-wrap { grid-template-columns: 1fr; gap: 2rem; }
+  .hero-media img { margin: 0 auto; max-width: 340px; }
 }
 @media (max-width: 540px) {
-  .stat-grid { grid-template-columns: repeat(2, 1fr); }
-  .stat:nth-child(2n) { border-right: 0; }
   .grid--2, .grid--3, .grid--4, .grid--5, .cost-grid { grid-template-columns: 1fr; }
   .gallery-grid { grid-template-columns: 1fr; }
 }

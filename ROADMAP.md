@@ -33,6 +33,14 @@ Pillar 2's job: once someone buys, give them one signed-in place to review and a
 - ✅ "Designed and cut in Logan, Utah" in footer and CTA section.
 - ✅ Localized title tag: "Custom Foam Tool Organizers for Lean Manufacturing | TidyTool — Logan, Utah."
 
+**Conversion redesign (2026-07-05, branch `feature/landing-conversion-redesign`, awaiting Sam's preview approval).**
+
+- Pain-led hero ("Stop losing tools. Stop losing time.") with proof photo; social proof (testimonial + gallery + case study) moved directly under the hero.
+- Flow now: pain → proof → process → why-it-works (Real Costs / Lean / Why / Materials merged) → segments → form. Stat strip and mid-page CTA band cut.
+- CTA renamed site-wide: "Get a Fast Quote"/"New Customer" → **"Get Started"** (the conversion is scheduling the consult call).
+- Added `docs/privacy.html` + footer link (form collects lead data; no legal page existed).
+- Spec: `planning/FEATURE-landing-conversion-redesign.md`. Still owner-side: Tally form — make "How did you hear about us?" optional; collect 1–2 more testimonials; higher-res install photos (current 360×480 is soft as a hero image).
+
 ## Phase 2 — Local visibility, brand-hedged (weeks 5–8)
 
 Hedge rule: build assets that survive a rename. Hold anything that compounds under the "TidyTool" name.
