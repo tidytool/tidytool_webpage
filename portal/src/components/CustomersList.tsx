@@ -5,12 +5,63 @@ import { useRouter } from "next/navigation";
 import type { AdminCustomer, AdminOrganization } from "@/lib/types";
 import {
   updateCustomerAction,
-  setCustomerOrgAction,
   mergeCustomersAction,
   deleteCustomerAction,
   bulkDeleteCustomers,
+  setCustomerOrg,
 } from "@/app/admin/actions";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { PortalAccess } from "@/components/PortalAccess";
+
+/** Org tag + dropdown that saves immediately on change — no "Set org" button.
+ *  Controlled locally so the picked value never snaps back while the server
+ *  round-trip completes. */
+function OrgPicker({
+  customerId,
+  initialOrgId,
+  organizations,
+  onError,
+}: {
+  customerId: string;
+  initialOrgId: string | null;
+  organizations: AdminOrganization[];
+  onError: (msg: string | null) => void;
+}) {
+  const [orgId, setOrgId] = useState(initialOrgId ?? "");
+  const [saving, startSaving] = useTransition();
+
+  const change = (next: string) => {
+    const prev = orgId;
+    setOrgId(next); // optimistic — the tag updates instantly
+    onError(null);
+    startSaving(async () => {
+      const res = await setCustomerOrg(customerId, next);
+      if (res.error) {
+        setOrgId(prev);
+        onError(res.error);
+      }
+    });
+  };
+
+  return (
+    <label className="ctrl" style={{ flexDirection: "row", alignItems: "center", gap: "0.45rem" }}>
+      <span>Organization</span>
+      <select
+        value={orgId}
+        onChange={(e) => change(e.target.value)}
+        disabled={saving}
+        aria-label="Organization (saves immediately)"
+        style={{ height: "1.9rem", fontSize: "0.84rem", padding: "0 0.45rem", borderRadius: "999px" }}
+      >
+        <option value="">None</option>
+        {organizations.map((g) => (
+          <option key={g.organization_id} value={g.organization_id}>{g.name}</option>
+        ))}
+      </select>
+      {saving ? <span className="muted" style={{ fontSize: "0.78rem" }}>Saving…</span> : null}
+    </label>
+  );
+}
 
 /** Customers with multi-select bulk delete. Deleting unlinks the customer's
  *  orders (they reappear as "unassigned"). Customers with portal logins are
@@ -100,14 +151,19 @@ export function CustomersList({
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
                   <span className="chip num">Orders <strong>{c.order_count}</strong></span>
                   {c.has_login ? <span className="badge badge--approved">Portal login</span> : null}
-                  {c.organization_name ? <span className="chip">{c.organization_name}</span> : null}
+                  <OrgPicker
+                    customerId={c.customer_id}
+                    initialOrgId={c.organization_id}
+                    organizations={organizations}
+                    onError={setError}
+                  />
                 </div>
-                <form action={deleteCustomerAction}>
-                  <input type="hidden" name="customer_id" value={c.customer_id} />
-                  {!c.has_login ? (
+                {selected.has(c.customer_id) ? (
+                  <form action={deleteCustomerAction}>
+                    <input type="hidden" name="customer_id" value={c.customer_id} />
                     <ConfirmButton
                       message={
                         `Delete customer "${c.name || c.email || "unnamed"}"?` +
@@ -119,12 +175,8 @@ export function CustomersList({
                     >
                       Delete
                     </ConfirmButton>
-                  ) : (
-                    <button className="btn btn--sm btn--danger" disabled title="Has a portal login — protected" type="button">
-                      Delete
-                    </button>
-                  )}
-                </form>
+                  </form>
+                ) : null}
               </div>
 
               <form action={updateCustomerAction} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end", marginTop: "0.8rem" }}>
@@ -145,17 +197,7 @@ export function CustomersList({
               </form>
 
               <div style={{ display: "flex", gap: "0.9rem", flexWrap: "wrap", marginTop: "0.7rem", alignItems: "center" }}>
-                <form action={setCustomerOrgAction} style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-                  <input type="hidden" name="customer_id" value={c.customer_id} />
-                  <select name="organization_id" defaultValue={c.organization_id ?? ""} aria-label="Organization">
-                    <option value="">No organization</option>
-                    {organizations.map((g) => (
-                      <option key={g.organization_id} value={g.organization_id}>{g.name}</option>
-                    ))}
-                  </select>
-                  <button className="btn btn--ghost btn--sm" type="submit">Set org</button>
-                </form>
-
+                <PortalAccess email={c.email} hasLogin={c.has_login} onError={setError} />
                 <details className="reveal">
                   <summary>Merge a duplicate into this record</summary>
                   <form action={mergeCustomersAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
