@@ -84,13 +84,24 @@ export type AdminOrphanOrder = {
   total_price: number | null;
 };
 
-/** Row from get_admin_customers() — assign-order dropdown. */
+/** Row from get_admin_customers() — assign-order dropdown + customers page. */
 export type AdminCustomer = {
   customer_id: string;
   name: string | null;
   email: string | null;
+  phone: string | null;
   organization_id: string | null;
   organization_name: string | null;
+  order_count: number;
+  has_login: boolean;
+};
+
+/** Row from get_admin_organizations(). */
+export type AdminOrganization = {
+  organization_id: string;
+  name: string;
+  customer_count: number;
+  order_count: number;
 };
 
 /** Row from get_admin_orders(filters) — the admin orders list. */

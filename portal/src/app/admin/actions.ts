@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -143,6 +144,135 @@ export async function updateNicknameAction(formData: FormData) {
   if (error) throw new Error(error.message);
   if (orderId) revalidatePath(`/admin/orders/${orderId}`);
   revalidatePath("/admin");
+}
+
+export async function createCustomerAction(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("A customer name is required.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_create_customer", {
+    p_name: name,
+    p_email: opt(formData, "email"),
+    p_phone: opt(formData, "phone"),
+  });
+  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/customers");
+}
+
+// ---------------------------------------------------------------------------
+// Create / delete / bulk (T3.5b). Delete failures redirect back with ?error=
+// instead of throwing, so guard violations ("customer has orders") read as a
+// friendly banner, not a crash page.
+// ---------------------------------------------------------------------------
+
+export async function createOrderAction(formData: FormData) {
+  const name = String(formData.get("customer_name") ?? "").trim();
+  if (!name) throw new Error("A customer name is required.");
+  const priceRaw = opt(formData, "total_price_dollars");
+  let cents: number | null = null;
+  if (priceRaw != null) {
+    const dollars = Number(priceRaw.replace(/[$,]/g, ""));
+    if (!Number.isFinite(dollars) || dollars < 0) throw new Error("Invalid price.");
+    cents = Math.round(dollars * 100);
+  }
+  const countRaw = opt(formData, "drawer_count");
+  const supabase = await createClient();
+  const { data: orderId, error } = await supabase.rpc("admin_create_order", {
+    p_customer_name: name,
+    p_customer_email: opt(formData, "customer_email"),
+    p_customer_phone: opt(formData, "customer_phone"),
+    p_project_name: opt(formData, "project_name"),
+    p_location: opt(formData, "location"),
+    p_notes: opt(formData, "notes"),
+    p_drawer_count: countRaw == null ? null : Number(countRaw),
+    p_total_price_cents: cents,
+    p_customer_id: opt(formData, "customer_id"),
+  });
+  if (error) redirect(`/admin/orders?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  redirect(`/admin/orders/${orderId}`);
+}
+
+export async function deleteOrderAction(formData: FormData) {
+  const orderId = String(formData.get("order_id") ?? "");
+  if (!orderId) throw new Error("Missing order id.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_delete_order", { p_order_id: orderId });
+  if (error) {
+    redirect(`/admin/orders/${orderId}?error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  redirect("/admin/orders");
+}
+
+export async function deleteCustomerAction(formData: FormData) {
+  const customerId = String(formData.get("customer_id") ?? "");
+  if (!customerId) throw new Error("Missing customer id.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_delete_customer", {
+    p_customer_id: customerId,
+  });
+  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/customers");
+}
+
+export async function deleteOrgAction(formData: FormData) {
+  const orgId = String(formData.get("organization_id") ?? "");
+  if (!orgId) throw new Error("Missing organization id.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_delete_organization", {
+    p_organization_id: orgId,
+  });
+  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/customers");
+}
+
+export async function renameOrgAction(formData: FormData) {
+  const orgId = String(formData.get("organization_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!orgId || !name) throw new Error("Organization name required.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_rename_organization", {
+    p_organization_id: orgId,
+    p_name: name,
+  });
+  if (error) redirect(`/admin/customers?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/admin/customers");
+}
+
+/** Called from the bulk-select client component; returns instead of throwing. */
+export async function bulkAssignOrders(
+  orderIds: string[],
+  customerId: string,
+): Promise<{ error?: string; assigned?: number }> {
+  if (!orderIds.length) return { error: "No orders selected." };
+  if (!customerId) return { error: "Pick a customer first." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_assign_orders", {
+    p_order_ids: orderIds,
+    p_customer_id: customerId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  return { assigned: (data as { assigned?: number })?.assigned ?? orderIds.length };
+}
+
+/** Called from the bulk-select client component; returns instead of throwing. */
+export async function bulkDeleteOrders(
+  orderIds: string[],
+): Promise<{ error?: string; deleted?: number }> {
+  if (!orderIds.length) return { error: "No orders selected." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_bulk_delete_orders", {
+    p_order_ids: orderIds,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  return { deleted: (data as { deleted?: number })?.deleted ?? orderIds.length };
 }
 
 export async function markDeliveredAction(formData: FormData) {
