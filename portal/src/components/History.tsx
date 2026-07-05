@@ -5,6 +5,7 @@ const EVENT_LABELS: Record<DrawerEvent["event_type"], string> = {
   design_revised: "Design updated",
   approved: "Approved",
   changes_requested: "Changes requested",
+  delivered: "Delivered",
 };
 
 export function History({ events }: { events: DrawerEvent[] }) {
