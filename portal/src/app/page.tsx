@@ -107,11 +107,22 @@ export default async function DashboardPage() {
           </div>
         ) : drawers.length === 0 ? (
           <div className="card" style={{ marginTop: "1.25rem" }}>
-            <h2 style={{ fontSize: "1.1rem" }}>No designs yet</h2>
+            <h2 style={{ fontSize: "1.1rem" }}>No designs found</h2>
             <p className="muted" style={{ margin: 0 }}>
               We don&apos;t have any drawers tied to <strong>{email}</strong>{" "}
               yet. Once we&apos;ve scanned and designed your organizer, it will show
               up here for approval.
+            </p>
+            <p className="muted" style={{ margin: "0.75rem 0 0" }}>
+              Already ordered and expecting to see your designs here?{" "}
+              <a
+                href={`https://tally.so/r/rjW6Z5${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Let us know
+              </a>{" "}
+              and we&apos;ll get it sorted.
             </p>
           </div>
         ) : (

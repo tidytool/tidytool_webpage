@@ -278,6 +278,22 @@ export async function bulkDeleteOrders(
   return { deleted: (data as { deleted?: number })?.deleted ?? orderIds.length };
 }
 
+/** Set/clear a customer's organization. Client-callable (auto-save on change). */
+export async function setCustomerOrg(
+  customerId: string,
+  orgId: string,
+): Promise<{ error?: string }> {
+  if (!customerId) return { error: "Missing customer id." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_set_customer_organization", {
+    p_customer_id: customerId,
+    p_organization_id: orgId || null,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/admin/customers");
+  return {};
+}
+
 /** Bulk delete customers (unlinks their orders first). Client-callable. */
 export async function bulkDeleteCustomers(
   customerIds: string[],
@@ -337,6 +353,97 @@ export async function bulkMarkDelivered(
   if (error) return { error: error.message };
   revalidatePath("/admin");
   return { delivered: (data as { delivered?: number })?.delivered ?? drawerIds.length };
+}
+
+// ---------------------------------------------------------------------------
+// Portal access (auth-user management). These use the SERVICE-ROLE client,
+// which bypasses RLS — so unlike the RPC wrappers above, we must verify the
+// caller is an admin here, ourselves, before doing anything.
+// ---------------------------------------------------------------------------
+
+async function requireAdmin(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("is_admin");
+  if (error) return error.message;
+  if (data !== true) return "Not authorized.";
+  return null;
+}
+
+function portalRedirectTo(): string {
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.thetidytool.com";
+  return `${site}/auth/confirm?next=/set-password`;
+}
+
+/** Friendlier message when the auth user already exists. */
+function inviteErrorMessage(raw: string): string {
+  if (/already.*(registered|exists|been invited)/i.test(raw)) {
+    return "That email already has a portal account. Ask them to use “Email me a link” on the sign-in page, or set a new password for them below.";
+  }
+  return raw;
+}
+
+/** Send a Supabase invite email; the link lands on /set-password. Client-callable. */
+export async function invitePortalUser(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "This customer has no email on file. Add one first." };
+  const denied = await requireAdmin();
+  if (denied) return { error: denied };
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.inviteUserByEmail(addr, {
+    redirectTo: portalRedirectTo(),
+  });
+  if (error) return { error: inviteErrorMessage(error.message) };
+  revalidatePath("/admin/customers");
+  return { ok: true };
+}
+
+/** Create (or reset) a login with a password you hand to the customer directly.
+ *  Fallback for flaky email. Client-callable. */
+export async function createPortalLoginWithPassword(
+  email: string,
+  password: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "This customer has no email on file. Add one first." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  const denied = await requireAdmin();
+  if (denied) return { error: denied };
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { error } = await admin.auth.admin.createUser({
+    email: addr,
+    password,
+    email_confirm: true, // no confirmation email — Sam relays the password
+  });
+  if (!error) {
+    revalidatePath("/admin/customers");
+    return { ok: true };
+  }
+
+  // Already registered? Treat as a password reset for the existing user.
+  if (/already.*(registered|exists)/i.test(error.message)) {
+    const { data: page, error: listErr } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (listErr) return { error: listErr.message };
+    const existing = page.users.find((u) => u.email?.toLowerCase() === addr);
+    if (!existing) return { error: "Account exists but couldn't be found to reset." };
+    const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
+      password,
+    });
+    if (updErr) return { error: updErr.message };
+    revalidatePath("/admin/customers");
+    return { ok: true };
+  }
+
+  return { error: error.message };
 }
 
 export async function markDeliveredAction(formData: FormData) {
