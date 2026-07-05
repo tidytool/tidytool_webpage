@@ -30,7 +30,12 @@ export type DrawerApproval = {
 
 /** Row from get_drawer_changelog(p_drawer_id) — the history timeline. */
 export type DrawerEvent = {
-  event_type: "design_uploaded" | "design_revised" | "approved" | "changes_requested";
+  event_type:
+    | "design_uploaded"
+    | "design_revised"
+    | "approved"
+    | "changes_requested"
+    | "delivered";
   revision: number | null;
   actor_name: string | null;
   actor_role: "customer" | "staff";
@@ -47,6 +52,45 @@ export const STATUS_LABELS: Record<string, string> = {
   processed_by_tidydesk: "In design",
   approved_by_qualityctrl: "Approved",
   received_by_fabricator: "In fabrication",
+};
+
+/** Row from get_admin_pipeline() — admin view of every drawer. */
+export type AdminPipelineRow = {
+  drawer_id: string;
+  nickname: string | null;
+  status: string | null;
+  customer_approval_status: ApprovalStatus;
+  current_revision: number | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  order_id: string | null;
+  project_name: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  created_at: string;
+};
+
+/** Row from get_admin_orphan_orders() — orders with no customer link (decision 5). */
+export type AdminOrphanOrder = {
+  order_id: string;
+  created_at: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  project_name: string | null;
+  drawer_count: number | null;
+  /** Integer CENTS — divide by 100 for dollars. */
+  total_price: number | null;
+};
+
+/** Row from get_admin_customers() — assign-order dropdown. */
+export type AdminCustomer = {
+  customer_id: string;
+  name: string | null;
+  email: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
 };
 
 export function formatDimensions(dim: unknown): string | null {
