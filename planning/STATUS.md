@@ -1,47 +1,45 @@
-# TidyTool Status — 2026-07-07
+# TidyTool Status — 2026-07-09
 
 _Written by the PM agent. Playbook: `planning/pm-agent.md`. Overwritten each run — history in git._
 
 ## Project version snapshot
 
 - Phase 0 — Stop the bleeding: ✅ 100%
-- Phase 1 — Credibility core: ✅ 100%
-- Phase 2 — Local visibility: ~5% — **still the biggest gap.** GBP not started, landing pages + LocalBusiness schema unbuilt
+- Phase 1 — Credibility core: ✅ 100% (named Waddoups testimonial + Bridgerland case study are LIVE — owner "fill placeholders" item closed)
+- Phase 2 — Local visibility: **~60% — CORRECTION.** Prior reports said "landing pages + schema unbuilt"; in fact `docs/lean-manufacturing.html`, `docs/technical-schools.html`, LocalBusiness JSON-LD, sitemap, and local-intent titles have been live in main since 2026-06-12 (verified this run: linked in nav, in sitemap, schema in `index.html`). The remaining gap is entirely Sam-side: GBP registration + postcard verification.
 - Phase 3 — Depth/inbound: 0% (gated on rebrand decision, Sept 2026)
-- Phase 4 — Customer portal: ~90% — portal live, admin CRM v1, **notifications + custom SMTP now LIVE**. Open: T4 timeline, CRM v2, tidyCAM security gate, label entry (blocked on tidyCAM)
+- Phase 4 — Customer portal: ~90% — portal + admin CRM + notifications live. Open: T3.7 est-delivery, T4 timeline, tidyCAM security gate, label entry (blocked on tidyCAM)
 
-## Shipped since last check (2026-07-05 evening)
+## Shipped since last check (2026-07-07)
 
-- Notifications LIVE: `notify` edge function (Resend) + migration `20260708000000` applied to prod; design-ready + approved emails smoke-tested end-to-end
-- Custom SMTP live (Resend, sender `mail.thetidytool.com`); runbook `planning/smtp-notifications-runbook.md` kept as reference — last run's #1 ROI item is DONE
-- Portal build fix: exclude `supabase/` Deno functions from Next.js typecheck
-- Hero sample photo removed from hero, kept in proof gallery (PRs #11/#12)
-- `planning/TIDYCAM-launch-coordination.md` drafted (mobile pre-launch review; committed this run)
+- Nothing new — quiet two days (only the last PM commit). This run's value is the Phase 2 correction above and cleanup.
 
 ## Next steps by impending ROI
 
-1. **tidyCAM pre-launch security gate** (`planning/TIDYCAM-launch-coordination.md`). (a) Rotate the DB password — the Postgres connection string shipped inside every mobile build until 2026-07-05 (~10 min, Sam). (b) Server-side approval-gate RLS — signups stay ENABLED by decision, so this is the only wall before TestFlight invites (~0.5 day + branch test, needs Sam's review: auth/RLS = high-risk). (c) Storage policy tightening (verified safe for tidyCAM paths; test on branch). Why now: launch-blocker + live credential exposure. PM audit note: all 29 `admin_*`/`get_admin_*` RPCs across migrations DO internally check `is_admin()` (grep-verified), so lint-0029 is defense-in-depth (revoke EXECUTE from `authenticated`), not an open hole.
-2. **Phase 2 lead-gen sprint** — portal is at ~90% while the pillar that produces quotes sits at 5%. (a) GBP registration [Sam, starts postcard clock]; (b) `/lean-manufacturing` + `/schools` pages + LocalBusiness schema [dev-buildable now, brand-portable, `prompts/phase-2-prompt.md` ready]. Effort: ~1 day dev + Sam's GBP hour.
-3. **Auth hygiene toggles** — leaked-password protection ON + Postgres security patch (~15 min dashboard). Live product, real logins, repeatedly advisor-flagged.
-4. **T4 — lifecycle timeline** (migration 0005): `drawer_event` RLS for customers, status-trigger → events, portal "pizza tracker". Notifications going live makes the timeline the natural next customer-facing step. ~1 day.
-5. **DB housekeeping** — drop `drawer_backup_2026_05_02` + `_archive_customer_2026_07_03`, delete `[TEST]` drawers (bulk-delete exists), move `pg_net` out of public.
+1. **tidyCAM pre-launch security gate** (`planning/TIDYCAM-launch-coordination.md`) — unchanged #1. (a) Rotate DB password (~10 min, Sam — credential shipped in mobile builds until 2026-07-05); (b) approval-gate RLS before TestFlight invites (~0.5 day, needs Sam's high-risk review); (c) storage tightening (branch-test first). Why now: launch blocker + live credential exposure.
+2. **GBP registration** [Sam, ~1 hr] — with the Phase 2 dev assets confirmed shipped, this is the single remaining lever on the lead-gen pillar and it starts an 8-week postcard clock. Checklist ready: `planning/gbp-setup-checklist.md`. Highest value-per-hour on the board.
+3. **Auth hygiene toggles** [Sam, ~15 min dashboard] — leaked-password protection ON + Postgres security patch. Live product, real logins, advisor-flagged for weeks.
+4. **T3.7 — Estimated delivery date** (~0.5 day + migration review) — data model already decided (nullable `order.estimated_delivery`); admin edit/create + portal display. Small, customer-visible, and feeds T4.
+5. **T4 — lifecycle timeline** (~1 day) — `drawer_event` RLS, status-trigger → events, portal "pizza tracker". Natural follow-on once T3.7 lands.
 
-Deliberately parked: label entry (blocked on tidyCAM tool names), CRM v2 (notes/aging/CSV), reorders/saved designs.
+Also queued: DB housekeeping (drop `drawer_backup_2026_05_02` + `_archive_customer_2026_07_03`, delete `[TEST]` drawers, move `pg_net` out of public). Deliberately parked: label entry (blocked on tidyCAM), CRM v2, reorders/saved designs.
 
 ## Waiting on Sam
 
-- **Rotate the Supabase database password** (urgent — exposed in past mobile builds; independent of everything else)
-- Review/approve tidyCAM approval-gate + storage-tightening migrations (auth/RLS — high-risk gate per CLAUDE.md)
+- **Rotate the Supabase database password** (urgent — exposed in past mobile builds)
+- Review/approve tidyCAM approval-gate + storage-tightening migrations (auth/RLS — high-risk gate)
 - Dashboard toggles: leaked-password protection ON, Postgres patch upgrade
-- GBP registration + postcard verification (8-week clock hasn't started)
+- **GBP registration + postcard verification** — now the only thing holding Phase 2 back
 - Rebrand decision — September 2026
 - Rotate Discord approval webhook (plaintext exposure 2026-06-28)
-- Owner-side conversion items: Tally "How did you hear about us?" → optional; 1–2 more testimonials; higher-res install photos
-- Disposition of `planning/FEATURE-approval-changelog.md` — the `drawer_event` log + `log_design_revision` shipped since it was proposed; confirm whether the spec is superseded so it can be pruned
+- Owner-side conversion items: Tally "How did you hear about us?" → optional; 1–2 additional testimonials; higher-res install photos
+- Disposition of `planning/FEATURE-approval-changelog.md` (flagged 2026-07-07, still unanswered): `drawer_event` + `log_design_revision` shipped since the spec — confirm superseded so it can be pruned
+- Disposition of `planning/customer-interview-form.pdf` — kept as a possibly-reusable template after the BTech interview guide was pruned; confirm keep/delete
 
 ## Cleanup log (this run)
 
-- Deleted `planning/DB-baseline-runbook.md` — superseded 2026-07-03; baseline (T1) complete, provenance lives in `portal/supabase/migrations/README.md`
-- Deleted `planning/FEATURE-landing-conversion-redesign.md` — shipped/merged (PR #5); remaining owner-side items moved to "Waiting on Sam" above and already in ROADMAP
-- ROADMAP.md: portal launch-hygiene line updated (SMTP done; signups stay enabled by 2026-07-05 decision); T5 notifications marked shipped
-- Kept `planning/FEATURE-approval-changelog.md` (completion ambiguous — flagged above); kept `smtp-notifications-runbook.md` (self-declared reference w/ durable sender gotcha); repo `memory/` and auto-memory unchanged (durable facts only)
+- Deleted `prompts/phase-2-prompt.md` — all 5 tasks verified executed in main (LocalBusiness JSON-LD in `index.html`; both landing pages live, in nav + sitemap; local-intent titles/meta; GBP checklist delivered as `planning/gbp-setup-checklist.md`)
+- Deleted `planning/btech-interview-guide.md` — interview (2026-06-25) completed; its outputs (named testimonial + case study) are live on the site
+- `ROADMAP.md`: Phase 2 dev-side items marked ✅ shipped; owner testimonial action item checked off (quote + case study live)
+- `memory/project-overview.md`: removed stale "stat strip" theme note (stat strip was cut in the conversion redesign)
+- Kept: `planning/FEATURE-approval-changelog.md` (still ambiguous — flagged above), `customer-interview-form.pdf` (flagged above), `smtp-notifications-runbook.md` (reference), `BACKEND-analysis.md` (§4.5/§4.6/§4.7/§3d still open), phase-3 + phase-4 prompts (phases open). Auto-memory unchanged (durable facts only).

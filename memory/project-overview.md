@@ -14,7 +14,7 @@ Lead-gen website for TidyTool — custom CNC laser-cut XLPE foam tool organizers
 ## Brand
 - Logo: black "tidy" + red "tool" on white — PNG at images/logos/tidytool_full_logo.png
 - Accent: #E8312A (logo red) — confirmed from logo image
-- Theme (as of June 2026): light professional palette (white/off-white), dark footer, single dark contrast stat strip
+- Theme (as of June 2026): light professional palette (white/off-white), dark footer (stat strip removed in the July 2026 conversion redesign)
 
 ## Current CSS tokens
 - --c-bg: #F7F8FA | --c-surface: #FFFFFF | --c-surface-2: #EFF2F5

@@ -47,10 +47,10 @@ Hedge rule: build assets that survive a rename. Hold anything that compounds und
 
 **Do now (portable):**
 
-- Google Business Profile under the legal business entity, category "Manufacturer," Logan UT service area. GBP transfers through a rename far better than backlinks do.
-- LocalBusiness schema markup on the site.
-- Segment landing pages: `/lean-manufacturing` and `/schools` — content is brand-neutral and moves with you.
-- On-page SEO for local-intent terms: "custom foam tool organizers Utah," "shadow board foam inserts," "5S tool control foam."
+- Google Business Profile under the legal business entity, category "Manufacturer," Logan UT service area. GBP transfers through a rename far better than backlinks do. ⬅ **only open item — Sam, see `planning/gbp-setup-checklist.md`**
+- ✅ LocalBusiness schema markup on the site (JSON-LD in `docs/index.html`; live since 2026-06-12).
+- ✅ Segment landing pages: `docs/lean-manufacturing.html` + `docs/technical-schools.html` — live, linked in nav, in sitemap (verified 2026-07-09).
+- ✅ On-page SEO for local-intent terms — localized titles/meta on homepage and both landing pages.
 
 **Defer until rebrand decision:**
 
@@ -96,7 +96,7 @@ Full spec: `planning/FEATURE-profiles.md`. Free-included with every order — th
 These are human tasks that require Sam's direct involvement. They are tracked here so they don't fall through the cracks.
 
 - [ ] **GBP setup:** Follow `planning/gbp-setup-checklist.md` — register under your legal entity name, complete postcard verification, upload install photos. Target: verified and live within 8 weeks.
-- [ ] **Testimonial:** Fill in the `[TODO]` placeholders on the homepage proof section and the case study page (`case-study-technical-college.html`). Get written permission from your contact before publishing their name and title.
+- [x] ✅ **Testimonial — done.** Named Jeff Waddoups quote live on the homepage; Bridgerland case study live (`case-study-technical-college.html`). Still nice-to-have: 1–2 additional testimonials (tracked in `planning/STATUS.md`).
 - [ ] **Rebrand decision deadline:** September 2026. Every month undecided is a month of unbuilt domain equity. Set a calendar reminder. All current Phase 2 assets (GBP, landing pages, schema) are brand-neutral and survive a rename.
 - [x] ✅ **Supabase database hardening — done 2026-07-03.** Anon blanket reads on `drawer`/`employee` closed (`0002_harden_anon_reads.sql`; public QR page uses `get_public_drawer()` RPC); round 2 (`0003_harden_round2.sql`) revoked anon `is_admin()`, dropped duplicate policies, closed whole-bucket listing. All verified against prod. Still open elsewhere: leaked-password protection (Sam, dashboard) and Postgres patch upgrade — tracked in `planning/portal-launch-runbook.md`.
 
