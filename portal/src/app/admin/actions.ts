@@ -446,6 +446,66 @@ export async function createPortalLoginWithPassword(
   return { error: error.message };
 }
 
+// ---------------------------------------------------------------------------
+// Employees (staff-role management). grant/revoke go through the normal
+// session client — the RPCs are SECURITY DEFINER and re-check is_admin()
+// in the database, which is the real security boundary. No service role.
+// ---------------------------------------------------------------------------
+
+type StaffRpcResult = { ok: boolean; user_id?: string; error?: string };
+
+/** Grant the 'staff' role by email. Idempotent. Client-callable. */
+export async function grantStaffRole(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("grant_staff_role", { p_email: addr });
+  if (error) return { error: error.message };
+  const res = data as StaffRpcResult;
+  if (!res?.ok) return { error: res?.error ?? "Grant failed." };
+  revalidatePath("/admin/employees");
+  return { ok: true };
+}
+
+/** Revoke the 'staff' role by email. Cannot touch 'admin'. Client-callable. */
+export async function revokeStaffRole(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("revoke_staff_role", { p_email: addr });
+  if (error) return { error: error.message };
+  const res = data as StaffRpcResult;
+  if (!res?.ok) return { error: res?.error ?? "Revoke failed." };
+  revalidatePath("/admin/employees");
+  return { ok: true };
+}
+
+/** Invite a new employee: service-role invite email creates the auth user,
+ *  then staff is granted through the normal session client. Client-callable. */
+export async function inviteEmployeeAndGrantStaff(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  const denied = await requireAdmin();
+  if (denied) return { error: denied };
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(addr, {
+    redirectTo: portalRedirectTo(),
+  });
+  // "Already registered" is fine here — the account exists, so just grant.
+  if (inviteErr && !/already.*(registered|exists|been invited)/i.test(inviteErr.message)) {
+    return { error: inviteErr.message };
+  }
+  return grantStaffRole(addr);
+}
+
 export async function markDeliveredAction(formData: FormData) {
   const drawerId = String(formData.get("drawer_id") ?? "");
   const note = String(formData.get("note") ?? "").trim();

@@ -156,6 +156,15 @@ export type AdminOrderDetail = {
   drawers: AdminDetailDrawer[];
 };
 
+/** Row from admin_list_users() — the Employees page. */
+export type AdminUserRow = {
+  user_id: string;
+  email: string;
+  roles: string[];
+  created_at: string;
+  last_sign_in_at: string | null;
+};
+
 /** Row from get_admin_audit(). */
 export type AdminAuditRow = {
   id: string;
