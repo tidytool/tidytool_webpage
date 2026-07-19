@@ -177,6 +177,28 @@ export type AdminAuditRow = {
   created_at: string;
 };
 
+/**
+ * Row from get_calibration_accuracy_series(p_days) — one scan's calibration
+ * quality, for the live accuracy plot. numeric columns arrive as numbers via
+ * PostgREST, but coerce with Number() before arithmetic to be safe.
+ */
+export type CalibrationPoint = {
+  drawer_id: string;
+  nickname: string | null;
+  scanned_at: string;
+  score: number | null;
+  diagonal_error_mm: number | null;
+  edge_asymmetry_pct: number | null;
+};
+
+/** Row from get_calibration_accuracy_summary(p_days) — the KPI rollup. */
+export type CalibrationSummary = {
+  scans: number;
+  avg_score: number | null;
+  median_error_mm: number | null;
+  p90_error_mm: number | null;
+};
+
 /** Integer cents → "$1,234.56" (total_price is CENTS everywhere). */
 export function formatCents(cents: number | null | undefined): string | null {
   if (cents == null) return null;
