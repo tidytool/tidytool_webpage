@@ -2,9 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import {
   type AdminOrderDetail,
   type AdminCustomer,
+  type AdminQuote,
   STATUS_LABELS,
   formatCents,
 } from "@/lib/types";
+import { QuotesSection } from "@/components/QuotesSection";
 import {
   updateOrderAction,
   updateNicknameAction,
@@ -42,9 +44,10 @@ export default async function AdminOrderDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
-  const [detailRes, custRes] = await Promise.all([
+  const [detailRes, custRes, quotesRes] = await Promise.all([
     supabase.rpc("get_admin_order_detail", { p_order_id: id }),
     supabase.rpc("get_admin_customers"),
+    supabase.rpc("get_quotes_for_order", { p_order_id: id }),
   ]);
 
   if (detailRes.error) {
@@ -57,6 +60,8 @@ export default async function AdminOrderDetailPage({
   }
   const detail = detailRes.data as AdminOrderDetail;
   const customers = (custRes.data ?? []) as AdminCustomer[];
+  // Absent until the quoting migration is applied — render nothing rather than crash.
+  const quotes = (quotesRes.error ? [] : (quotesRes.data ?? [])) as AdminQuote[];
   const o = detail.order;
 
   return (
@@ -195,6 +200,8 @@ export default async function AdminOrderDetailPage({
           })}
         </div>
       </section>
+
+      <QuotesSection orderId={o.id} quotes={quotes} />
 
       <section className="card card--danger" style={{ marginTop: "1.5rem" }}>
         <h2 style={{ color: "var(--c-danger)" }}>Danger zone</h2>
