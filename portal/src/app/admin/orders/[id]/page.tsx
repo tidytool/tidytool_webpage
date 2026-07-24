@@ -14,6 +14,13 @@ import {
   assignOrderAction,
   deleteOrderAction,
 } from "../../actions";
+import {
+  createBoxAction,
+  updateBoxAction,
+  deleteBoxAction,
+  assignDrawerToBoxAction,
+  setDrawerQuantityAction,
+} from "../../box-actions";
 import { ConfirmButton } from "@/components/ConfirmButton";
 
 export const dynamic = "force-dynamic";
@@ -155,16 +162,71 @@ export default async function AdminOrderDetailPage({
       </section>
 
       <section style={{ marginTop: "1.5rem" }}>
+        <h2>Boxes <span className="muted num" style={{ fontWeight: 500 }}>({detail.boxes.length})</span></h2>
+        <p className="muted" style={{ fontSize: "0.85rem", margin: "0.2rem 0 0.8rem" }}>
+          A box groups drawers that are produced together and duplicate as a unit (e.g. 2 identical
+          toolboxes). Quantity = physical copies of the whole box. Drawers not in a box are trays.
+          Design is quoted once; foam is quoted per physical copy.
+        </p>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          {detail.boxes.map((b) => {
+            const count = detail.drawers.filter((d) => d.box_id === b.id).length;
+            return (
+              <div key={b.id} className="card" style={{ flex: "1 1 260px", maxWidth: "340px" }}>
+                <form action={updateBoxAction} style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "end" }}>
+                  <input type="hidden" name="order_id" value={o.id} />
+                  <input type="hidden" name="box_id" value={b.id} />
+                  <label className="ctrl" style={{ flex: "1 1 130px" }}>
+                    <span>Label</span>
+                    <input name="label" defaultValue={b.label} />
+                  </label>
+                  <label className="ctrl" style={{ flex: "0 0 70px" }}>
+                    <span>Copies</span>
+                    <input name="quantity" type="number" min="1" step="1" defaultValue={b.quantity} />
+                  </label>
+                  <button className="btn btn--ghost" type="submit">Save</button>
+                </form>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>{count} drawer{count === 1 ? "" : "s"}</span>
+                  <form action={deleteBoxAction}>
+                    <input type="hidden" name="order_id" value={o.id} />
+                    <input type="hidden" name="box_id" value={b.id} />
+                    <button className="btn btn--ghost" type="submit" style={{ color: "var(--c-danger)" }}>Delete box</button>
+                  </form>
+                </div>
+              </div>
+            );
+          })}
+          <form action={createBoxAction} className="card" style={{ flex: "1 1 240px", maxWidth: "300px", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "end" }}>
+            <input type="hidden" name="order_id" value={o.id} />
+            <label className="ctrl" style={{ flex: "1 1 120px" }}>
+              <span>New box label</span>
+              <input name="label" placeholder="e.g. Blue box" />
+            </label>
+            <label className="ctrl" style={{ flex: "0 0 70px" }}>
+              <span>Copies</span>
+              <input name="quantity" type="number" min="1" step="1" defaultValue={1} />
+            </label>
+            <button className="btn btn--primary" type="submit">Add box</button>
+          </form>
+        </div>
+      </section>
+
+      <section style={{ marginTop: "1.5rem" }}>
         <h2>Drawers <span className="muted num" style={{ fontWeight: 500 }}>({detail.drawers.length})</span></h2>
         <div style={{ display: "grid", gap: "1rem", marginTop: "0.75rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
           {detail.drawers.map((d) => {
             const stage = d.status ? STATUS_LABELS[d.status] ?? d.status : "—";
+            const box = detail.boxes.find((b) => b.id === d.box_id) ?? null;
+            const physical = (box ? box.quantity : 1) * d.quantity;
             return (
               <div key={d.id} className="card">
                 <strong>{d.nickname || "Untitled drawer"}</strong>
                 <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
                   <span className="chip">Stage <strong>{stage}</strong></span>
                   <span className="chip">Approval <strong>{d.customer_approval_status}</strong></span>
+                  <span className="chip">{box ? <>Box <strong>{box.label}</strong></> : <>Tray</>}</span>
+                  {physical > 1 ? <span className="chip">Physical <strong>×{physical}</strong></span> : null}
                 </div>
                 {d.photo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -190,6 +252,26 @@ export default async function AdminOrderDetailPage({
                   <input name="nickname" defaultValue={d.nickname ?? ""} placeholder="Nickname" style={{ flex: 1, minWidth: 0 }} />
                   <button className="btn btn--ghost" type="submit">Rename</button>
                 </form>
+
+                <form action={assignDrawerToBoxAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
+                  <input type="hidden" name="drawer_id" value={d.id} />
+                  <input type="hidden" name="order_id" value={o.id} />
+                  <select name="box_id" defaultValue={d.box_id ?? ""} style={{ flex: 1, minWidth: 0 }}>
+                    <option value="">Tray (no box)</option>
+                    {detail.boxes.map((b) => (
+                      <option key={b.id} value={b.id}>{b.label}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn--ghost" type="submit">Move</button>
+                </form>
+                <form action={setDrawerQuantityAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", alignItems: "center" }}>
+                  <input type="hidden" name="drawer_id" value={d.id} />
+                  <input type="hidden" name="order_id" value={o.id} />
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>Copies of this drawer</span>
+                  <input name="quantity" type="number" min="1" step="1" defaultValue={d.quantity} style={{ width: "4.5rem" }} />
+                  <button className="btn btn--ghost" type="submit">Set</button>
+                </form>
+
                 <form action={markDeliveredAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
                   <input type="hidden" name="drawer_id" value={d.id} />
                   <input name="note" placeholder="Delivery note (optional)" style={{ flex: 1, minWidth: 0 }} />

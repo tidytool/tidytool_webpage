@@ -46,9 +46,11 @@ export function QuotesSection({ orderId, quotes }: { orderId: string; quotes: Ad
       <div className="card" style={{ marginTop: "0.75rem" }}>
         <h3 style={{ margin: 0 }}>Generate quote</h3>
         <p className="muted" style={{ fontSize: "0.85rem", margin: "0.2rem 0 0.9rem" }}>
-          Prices every drawer on this order from its scanned dimensions using the active rate
-          card ($20/sqft, $40 drawer min, $250 order min). Site inputs below only affect the
-          internal cost estimate, never the customer price.
+          Prices every drawer from its scanned dimensions using the active rate card ($20/sqft,
+          $40 min per physical drawer, $250 order min), foam ×&nbsp;physical copies. Services:
+          $100 design once + $1.25/mi travel on each visit. <strong>Round-trip miles affects the
+          customer price</strong> (the travel lines); drive/install hours and trips affect only
+          the internal cost estimate &amp; margin.
         </p>
         <form
           action={createQuoteAction}
@@ -111,13 +113,19 @@ export function QuotesSection({ orderId, quotes }: { orderId: string; quotes: Ad
                 <tr key={l.position} style={{ borderTop: "1px solid var(--c-border)" }}>
                   <td style={{ padding: "0.45rem 0.5rem 0.45rem 0" }}>
                     {l.description}
-                    {l.qty != null && l.unit ? (
-                      <span className="muted">
-                        {" "}
-                        — {l.qty.toFixed(2)} {l.unit}
-                        {l.unit_price_cents != null ? ` × ${formatCents(l.unit_price_cents)}` : ""}
-                      </span>
-                    ) : null}
+                    {l.unit === "copies"
+                      ? l.qty != null && l.qty > 1 && l.unit_price_cents != null
+                        ? <span className="muted">{" "}— {l.qty} × {formatCents(l.unit_price_cents)}</span>
+                        : null
+                      : l.qty != null && l.unit
+                        ? (
+                          <span className="muted">
+                            {" "}
+                            — {l.qty.toFixed(2)} {l.unit}
+                            {l.unit_price_cents != null ? ` × ${formatCents(l.unit_price_cents)}` : ""}
+                          </span>
+                        )
+                        : null}
                   </td>
                   <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {l.included ? <span className="muted">Included</span> : formatCents(l.amount_cents)}

@@ -122,6 +122,15 @@ export type AdminOrderRow = {
   drawer_rows: number;
 };
 
+/** A box inside get_admin_order_detail() — a container of drawers that duplicates as a unit. */
+export type AdminBox = {
+  id: string;
+  label: string;
+  /** Physical copies of the whole box. */
+  quantity: number;
+  created_at: string;
+};
+
 /** Drawer entry inside get_admin_order_detail(). */
 export type AdminDetailDrawer = {
   id: string;
@@ -133,6 +142,10 @@ export type AdminDetailDrawer = {
   point_cloud_url: string | null;
   design_preview_url: string | null;
   dxf_url: string | null;
+  /** Parent box id, or null for a standalone tray. */
+  box_id: string | null;
+  /** Copies of this drawer within its parent. Physical count = box.quantity × this. */
+  quantity: number;
   created_at: string;
 };
 
@@ -153,6 +166,7 @@ export type AdminOrderDetail = {
   };
   customer: { id: string; name: string | null; email: string | null; phone: string | null } | null;
   organization: { id: string; name: string } | null;
+  boxes: AdminBox[];
   drawers: AdminDetailDrawer[];
 };
 
