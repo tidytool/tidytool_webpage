@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:pricing": "npx -y tsx --test src/lib/pricing/*.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

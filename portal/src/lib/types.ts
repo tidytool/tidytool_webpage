@@ -227,3 +227,62 @@ export function formatDimensions(dim: unknown): string | null {
   const parts = Object.keys(o).map((k) => `${k}: ${o[k]}`);
   return parts.length ? parts.join(" · ") : null;
 }
+
+/** One customer-facing line inside get_quotes_for_order(). */
+export type AdminQuoteLine = {
+  position: number;
+  kind:
+    | "measurement_design"
+    | "product"
+    | "upgrade"
+    | "delivery_install"
+    | "min_order_adjustment";
+  description: string;
+  drawer_id: string | null;
+  qty: number | null;
+  unit: string | null;
+  unit_price_cents: number | null;
+  /** Integer CENTS. */
+  amount_cents: number;
+  included: boolean;
+  meta: Record<string, unknown>;
+};
+
+/**
+ * Row from get_quotes_for_order(p_order_id). estimated_cost / gross_* /
+ * cost_breakdown are INTERNAL — never render them on a customer-facing surface.
+ */
+export type AdminQuote = {
+  id: string;
+  created_at: string;
+  status: "draft" | "sent" | "accepted" | "declined" | "expired" | "void";
+  /** Integer CENTS. */
+  subtotal_cents: number;
+  /** Integer CENTS. Exact sum of the line items (to the cent). */
+  total_cents: number;
+  estimated_cost_cents: number;
+  gross_profit_cents: number;
+  gross_margin: number | null;
+  margin_target: number;
+  below_target: boolean;
+  warnings: string[];
+  unpriced_drawers: { id: string; nickname: string | null; reason: string }[];
+  valid_until: string | null;
+  notes: string | null;
+  cost_breakdown: {
+    mileage_cents: number;
+    driving_labor_cents: number;
+    scanning_labor_cents: number;
+    install_labor_cents: number;
+    total_cents: number;
+    assumptions: {
+      trips: number;
+      round_trip_miles: number;
+      drive_hours_per_trip: number;
+      install_hours: number;
+      scanning_hours: number;
+      total_area_sqft: number;
+    };
+  };
+  lines: AdminQuoteLine[];
+};
