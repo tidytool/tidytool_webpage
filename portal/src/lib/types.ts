@@ -163,6 +163,8 @@ export type AdminOrderDetail = {
     drawer_count: number | null;
     total_price: number | null;
     customer_id: string | null;
+    site_address: string | null;
+    round_trip_miles: number | null;
   };
   customer: { id: string; name: string | null; email: string | null; phone: string | null } | null;
   organization: { id: string; name: string } | null;
