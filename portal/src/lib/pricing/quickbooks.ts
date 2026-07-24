@@ -45,22 +45,43 @@ function dollars(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
-/** Drawer description: label + dims (from the line) + sqft@rate or "order minimum". */
+/**
+ * Drawer description built from meta (never parsed from the display string):
+ * "{label} — {dims} · {sqft} sqft @ ${rate}/sqft" or "· order minimum". The copy
+ * count lives in the QB Qty column, so it is NOT repeated here.
+ */
 function productDescription(line: AdminQuoteLine): string {
-  const base = line.description.replace(/^Custom Foam Tool Organizer\s*[—-]\s*/, "");
-  if (line.meta?.drawer_minimum_applied === true) return `${base} · order minimum`;
+  const label = typeof line.meta?.label === "string" ? line.meta.label : "Drawer";
+  const dims = typeof line.meta?.dims_text === "string" ? ` — ${line.meta.dims_text}` : "";
+  if (line.meta?.drawer_minimum_applied === true) return `${label}${dims} · order minimum`;
   const area = num(line.meta?.area_sqft);
-  if (area != null && line.unit_price_cents != null) {
-    return `${base} · ${area.toFixed(2)} sqft @ $${dollars(line.unit_price_cents)}/sqft`;
+  const rate = num(line.meta?.sqft_rate_cents);
+  if (area != null && rate != null) {
+    return `${label}${dims} · ${area.toFixed(2)} sqft @ $${dollars(rate)}/sqft`;
   }
-  return base;
+  return `${label}${dims}`;
 }
 
 function descriptionFor(line: AdminQuoteLine): string {
-  if (line.included) return "Included with order";
   switch (line.kind) {
     case "product":
       return productDescription(line);
+    case "measurement_design": {
+      const base = num(line.meta?.base_cents);
+      const travel = num(line.meta?.travel_cents);
+      const miles = num(line.meta?.round_trip_miles);
+      const parts: string[] = [];
+      if (base != null) parts.push(`$${dollars(base)} design`);
+      if (travel != null && travel > 0) parts.push(`${miles ?? 0} mi round-trip travel ($${dollars(travel)})`);
+      return parts.join(" + ") || "On-site measurement & design";
+    }
+    case "delivery_install": {
+      const miles = num(line.meta?.round_trip_miles);
+      const travel = num(line.meta?.travel_cents);
+      return travel != null && travel > 0
+        ? `${miles ?? 0} mi round-trip travel`
+        : "Delivery, installation & test fit";
+    }
     case "upgrade":
       return line.description.replace(/^Optional Upgrade\s*[—-]\s*/, "");
     case "min_order_adjustment": {
@@ -72,16 +93,30 @@ function descriptionFor(line: AdminQuoteLine): string {
   }
 }
 
-/** Customer lines as QuickBooks-estimate rows. Amount column sums to quote.total_cents. */
+/**
+ * Customer lines as QuickBooks-estimate rows. Amount column sums to
+ * quote.total_cents. Product lines carry the copy count as Qty and the per-copy
+ * price as Rate (Qty × Rate = Amount holds); all other lines are flat Qty 1.
+ */
 export function toQuickBooksRows(quote: AdminQuote): QbRow[] {
   return quote.lines.map((l) => {
-    const amount = l.included ? 0 : l.amount_cents;
+    if (l.kind === "product") {
+      const qty = l.qty ?? 1;
+      const rate = l.unit_price_cents ?? l.amount_cents;
+      return {
+        item: ITEM_BY_KIND.product,
+        description: descriptionFor(l),
+        qty,
+        rate_cents: rate,
+        amount_cents: l.amount_cents,
+      };
+    }
     return {
       item: ITEM_BY_KIND[l.kind] ?? l.description,
       description: descriptionFor(l),
       qty: 1,
-      rate_cents: amount,
-      amount_cents: amount,
+      rate_cents: l.amount_cents,
+      amount_cents: l.amount_cents,
     };
   });
 }

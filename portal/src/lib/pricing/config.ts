@@ -44,10 +44,16 @@ export type PricingConfig = {
     /** Floor for the whole order; shortfall ships as a visible "Minimum Order Adjustment" line. */
     per_order_cents: number;
   };
-  /** Fixed customer-facing service lines. included=true renders as "Included" at $0. */
+  /**
+   * Customer-facing service lines, now travel-priced (Sam, 2026-07-24).
+   * $20/sqft already covers on-site labor (scanning + install/test-fit), so these
+   * lines are a one-time design base + travel, billed on BOTH visits (scan + delivery).
+   * measurement_design line = base_cents + round_trip_miles × travel_cents_per_mile.
+   * delivery_install  line  =              round_trip_miles × travel_cents_per_mile.
+   */
   services: {
-    measurement_design: { label: string; included: boolean; price_cents: number };
-    delivery_install: { label: string; included: boolean; price_cents: number };
+    measurement_design: { label: string; base_cents: number; travel_cents_per_mile: number };
+    delivery_install: { label: string; travel_cents_per_mile: number };
   };
   /**
    * Optional upgrades (engraving, rush, shipping…). Empty today; entries added
@@ -77,28 +83,29 @@ export type PricingConfig = {
 };
 
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
-  version: 1,
+  version: 2,
   currency: "USD",
   product: {
+    // $20/sqft covers foam material + cutting + on-site labor (scanning AND
+    // install/test-fit). No separate labor lines — see services below.
     rate_cents_per_sqft: 2000, // $20.00 / sqft
     thickness_multipliers: { "0.5": 1.0 },
     default_thickness_in: 0.5,
     default_thickness_multiplier: 1.0,
   },
   minimums: {
-    per_drawer_cents: 4000, // $40 / drawer
+    per_drawer_cents: 4000, // $40 / physical drawer
     per_order_cents: 25000, // $250 / order
   },
   services: {
     measurement_design: {
       label: "On-site Measurement & Design",
-      included: true,
-      price_cents: 0,
+      base_cents: 10000, // $100 one-time design/setup, charged once per quote
+      travel_cents_per_mile: 125, // $1.25 / round-trip mile (scan visit)
     },
     delivery_install: {
       label: "Delivery, Installation & Test Fit",
-      included: true,
-      price_cents: 0,
+      travel_cents_per_mile: 125, // $1.25 / round-trip mile (delivery visit)
     },
   },
   upgrades: {},
@@ -129,6 +136,14 @@ export function parsePricingConfig(raw: unknown): PricingConfig {
   }
   if (!c.minimums || !isCents(c.minimums.per_drawer_cents) || !isCents(c.minimums.per_order_cents)) {
     throw new Error("pricing config: minimums must be integer cents");
+  }
+  const md = c.services?.measurement_design;
+  const di = c.services?.delivery_install;
+  if (!md || !isCents(md.base_cents) || !isCents(md.travel_cents_per_mile)) {
+    throw new Error("pricing config: services.measurement_design needs integer base_cents + travel_cents_per_mile");
+  }
+  if (!di || !isCents(di.travel_cents_per_mile)) {
+    throw new Error("pricing config: services.delivery_install needs integer travel_cents_per_mile");
   }
   if (!c.costs || !isCents(c.costs.mileage_cents_per_round_trip_mile)) {
     throw new Error("pricing config: costs missing");
