@@ -14,13 +14,9 @@ import {
   assignOrderAction,
   deleteOrderAction,
 } from "../../actions";
-import {
-  createBoxAction,
-  updateBoxAction,
-  deleteBoxAction,
-  assignDrawerToBoxAction,
-  setDrawerQuantityAction,
-} from "../../box-actions";
+import { createBoxAction } from "../../box-actions";
+import { BoxCard } from "@/components/BoxCard";
+import { DrawerBoxControls } from "@/components/DrawerBoxControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +66,12 @@ export default async function AdminOrderDetailPage({
   // Absent until the quoting migration is applied — render nothing rather than crash.
   const quotes = (quotesRes.error ? [] : (quotesRes.data ?? [])) as AdminQuote[];
   const o = detail.order;
+
+  // Current physical-copy structure — used to flag quotes priced before a change.
+  const currentDrawerCopies = detail.drawers.map((d) => {
+    const box = detail.boxes.find((b) => b.id === d.box_id) ?? null;
+    return { id: d.id, copies: (box ? box.quantity : 1) * d.quantity };
+  });
 
   return (
     <main className="wrap wrap--wide">
@@ -169,39 +171,19 @@ export default async function AdminOrderDetailPage({
           Design is quoted once; foam is quoted per physical copy.
         </p>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-          {detail.boxes.map((b) => {
-            const count = detail.drawers.filter((d) => d.box_id === b.id).length;
-            return (
-              <div key={b.id} className="card" style={{ flex: "1 1 260px", maxWidth: "340px" }}>
-                <form action={updateBoxAction} style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "end" }}>
-                  <input type="hidden" name="order_id" value={o.id} />
-                  <input type="hidden" name="box_id" value={b.id} />
-                  <label className="ctrl" style={{ flex: "1 1 130px" }}>
-                    <span>Label</span>
-                    <input name="label" defaultValue={b.label} />
-                  </label>
-                  <label className="ctrl" style={{ flex: "0 0 70px" }}>
-                    <span>Copies</span>
-                    <input name="quantity" type="number" min="1" step="1" defaultValue={b.quantity} />
-                  </label>
-                  <button className="btn btn--ghost" type="submit">Save</button>
-                </form>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
-                  <span className="muted" style={{ fontSize: "0.85rem" }}>{count} drawer{count === 1 ? "" : "s"}</span>
-                  <form action={deleteBoxAction}>
-                    <input type="hidden" name="order_id" value={o.id} />
-                    <input type="hidden" name="box_id" value={b.id} />
-                    <button className="btn btn--ghost" type="submit" style={{ color: "var(--c-danger)" }}>Delete box</button>
-                  </form>
-                </div>
-              </div>
-            );
-          })}
+          {detail.boxes.map((b) => (
+            <BoxCard
+              key={b.id}
+              orderId={o.id}
+              box={{ id: b.id, label: b.label, quantity: b.quantity }}
+              drawerCount={detail.drawers.filter((d) => d.box_id === b.id).length}
+            />
+          ))}
           <form action={createBoxAction} className="card" style={{ flex: "1 1 240px", maxWidth: "300px", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "end" }}>
             <input type="hidden" name="order_id" value={o.id} />
             <label className="ctrl" style={{ flex: "1 1 120px" }}>
               <span>New box label</span>
-              <input name="label" placeholder="e.g. Blue box" />
+              <input name="label" placeholder="e.g. Blue box" required />
             </label>
             <label className="ctrl" style={{ flex: "0 0 70px" }}>
               <span>Copies</span>
@@ -253,24 +235,11 @@ export default async function AdminOrderDetailPage({
                   <button className="btn btn--ghost" type="submit">Rename</button>
                 </form>
 
-                <form action={assignDrawerToBoxAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
-                  <input type="hidden" name="drawer_id" value={d.id} />
-                  <input type="hidden" name="order_id" value={o.id} />
-                  <select name="box_id" defaultValue={d.box_id ?? ""} style={{ flex: 1, minWidth: 0 }}>
-                    <option value="">Tray (no box)</option>
-                    {detail.boxes.map((b) => (
-                      <option key={b.id} value={b.id}>{b.label}</option>
-                    ))}
-                  </select>
-                  <button className="btn btn--ghost" type="submit">Move</button>
-                </form>
-                <form action={setDrawerQuantityAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", alignItems: "center" }}>
-                  <input type="hidden" name="drawer_id" value={d.id} />
-                  <input type="hidden" name="order_id" value={o.id} />
-                  <span className="muted" style={{ fontSize: "0.85rem" }}>Copies of this drawer</span>
-                  <input name="quantity" type="number" min="1" step="1" defaultValue={d.quantity} style={{ width: "4.5rem" }} />
-                  <button className="btn btn--ghost" type="submit">Set</button>
-                </form>
+                <DrawerBoxControls
+                  orderId={o.id}
+                  drawer={{ id: d.id, box_id: d.box_id, quantity: d.quantity }}
+                  boxes={detail.boxes.map((b) => ({ id: b.id, label: b.label, quantity: b.quantity }))}
+                />
 
                 <form action={markDeliveredAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
                   <input type="hidden" name="drawer_id" value={d.id} />
@@ -283,7 +252,7 @@ export default async function AdminOrderDetailPage({
         </div>
       </section>
 
-      <QuotesSection orderId={o.id} quotes={quotes} />
+      <QuotesSection orderId={o.id} quotes={quotes} currentDrawerCopies={currentDrawerCopies} />
 
       <section className="card card--danger" style={{ marginTop: "1.5rem" }}>
         <h2 style={{ color: "var(--c-danger)" }}>Danger zone</h2>
