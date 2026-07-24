@@ -56,12 +56,22 @@ export async function createQuoteAction(formData: FormData) {
   // 2. The order's drawers (RLS: staff drawer SELECT policy).
   const { data: drawers, error: drawersError } = await supabase
     .from("drawer")
-    .select("id, nickname, dimensions")
+    .select("id, nickname, dimensions, box_id, quantity")
     .eq("order_id", orderId);
   if (drawersError) redirect(`${back}?error=${encodeURIComponent(drawersError.message)}`);
   if (!drawers || drawers.length === 0) {
     redirect(`${back}?error=${encodeURIComponent("This order has no drawers to price yet.")}`);
   }
+
+  // 2b. Boxes for this order — physical copies = box.quantity × drawer.quantity.
+  const { data: boxes } = await supabase.from("box").select("id, quantity").eq("order_id", orderId);
+  const boxQty = new Map<string, number>((boxes ?? []).map((b) => [b.id as string, Number(b.quantity) || 1]));
+  const drawerInputs = drawers!.map((d) => ({
+    id: d.id as string,
+    nickname: (d.nickname as string) ?? null,
+    dimensions: d.dimensions,
+    copies: (d.box_id ? boxQty.get(d.box_id as string) ?? 1 : 1) * (Number(d.quantity) || 1),
+  }));
 
   // 3. Price (pure, deterministic).
   const inputs: QuoteInputs = {
@@ -70,7 +80,7 @@ export async function createQuoteAction(formData: FormData) {
     install_hours: installHours!,
     ...(trips != null && trips > 0 ? { trips } : {}),
   };
-  const quote = computeQuote(drawers!, inputs, config!);
+  const quote = computeQuote(drawerInputs, inputs, config!);
   if (quote.lines.filter((l) => l.kind === "product").length === 0) {
     const reasons = quote.unpriced_drawers.map((d) => `${d.nickname ?? d.id.slice(0, 8)}: ${d.reason}`).join("; ");
     redirect(`${back}?error=${encodeURIComponent(`No drawer could be priced — ${reasons}`)}`);

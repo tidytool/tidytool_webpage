@@ -41,7 +41,7 @@ export type QuoteLine = {
   kind: QuoteLineKind;
   description: string;
   drawer_id: string | null;
-  /** Quantity in `unit` (sqft for product lines). Null for flat lines. */
+  /** Quantity in `unit` (copies for product lines). Null for flat lines. */
   qty: number | null;
   unit: string | null;
   /** Rate per unit in cents, when qty-based. */
@@ -73,6 +73,8 @@ export type QuoteDrawerInput = {
   id: string;
   nickname: string | null;
   dimensions: unknown;
+  /** Physical copies of this drawer = box.quantity × drawer.quantity. Default 1. */
+  copies?: number;
 };
 
 export type QuoteInputs = {
@@ -109,6 +111,11 @@ export type ComputedQuote = {
 };
 
 const roundCents = (n: number): number => Math.round(n);
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+const dollars = (cents: number): string => (cents / 100).toFixed(2);
+
+/** Round-trip miles above this are flagged for a typo check (not blocked). */
+const MILEAGE_SANITY_THRESHOLD = 300;
 
 function thicknessMultiplier(
   thickness_in: number,
@@ -140,23 +147,47 @@ export function computeQuote(
   const lines: QuoteLine[] = [];
   let position = 0;
 
-  // ---- 1. On-site Measurement & Design ------------------------------------
+  // Travel is billed on BOTH visits (scan trip + delivery trip) at the config
+  // per-mile rate; miles < 0 is clamped, absurdly high miles are flagged below.
+  const miles = Math.max(0, inputs.round_trip_miles);
+  if (miles > MILEAGE_SANITY_THRESHOLD) {
+    warnings.push(
+      `round-trip miles = ${round2(miles)} — unusually high; confirm it isn't a typo (customer travel is billed twice at this distance)`,
+    );
+  }
+
+  // ---- 1. On-site Measurement & Design (one-time design base + travel) ----
   const svcMeasure = config.services.measurement_design;
+  const measureTravel = roundCents(miles * svcMeasure.travel_cents_per_mile);
   lines.push({
     position: ++position,
     kind: "measurement_design",
-    description: svcMeasure.label,
+    description:
+      `${svcMeasure.label} ($${dollars(svcMeasure.base_cents)} design` +
+      (miles > 0
+        ? ` + ${round2(miles)} mi round-trip @ $${dollars(svcMeasure.travel_cents_per_mile)}/mi`
+        : "") +
+      `)`,
     drawer_id: null,
     qty: null,
     unit: null,
     unit_price_cents: null,
-    amount_cents: svcMeasure.included ? 0 : roundCents(svcMeasure.price_cents),
-    included: svcMeasure.included,
-    meta: {},
+    amount_cents: svcMeasure.base_cents + measureTravel,
+    included: false,
+    meta: {
+      base_cents: svcMeasure.base_cents,
+      travel_cents: measureTravel,
+      round_trip_miles: miles,
+    },
   });
 
-  // ---- 2. Product lines: one per drawer -----------------------------------
+  // ---- 2. Product lines: one per drawer DESIGN, priced × physical copies ---
+  // Foam ($20/sqft, $40 floor) is per PHYSICAL drawer, so it scales with copies
+  // (box.quantity × drawer.quantity). The $40 minimum floors each copy, not the
+  // line. Scanning/design is charged ONCE (the measurement line), not per copy —
+  // so totalAreaSqft (which drives internal scanning cost) is DESIGN area only.
   let totalAreaSqft = 0;
+  let totalPhysicalDrawers = 0;
   const priced: { drawer: QuoteDrawerInput; dims: NormalizedDrawerDims }[] = [];
   for (const drawer of drawers) {
     const result = normalizeDrawerDimensions(drawer.dimensions);
@@ -171,6 +202,8 @@ export function computeQuote(
     const label = drawer.nickname || `Drawer ${drawer.id.slice(0, 8)}`;
     for (const w of dims.warnings) warnings.push(`${label}: ${w}`);
 
+    const copies = Math.max(1, Math.floor(drawer.copies ?? 1));
+
     let thickness = dims.thickness_in;
     if (thickness == null) {
       thickness = config.product.default_thickness_in;
@@ -178,32 +211,40 @@ export function computeQuote(
     }
     const mult = thicknessMultiplier(thickness, config, warnings, label);
 
-    const rawCents = dims.area_sqft * config.product.rate_cents_per_sqft * mult;
-    const beforeMin = roundCents(rawCents);
-    const amount = Math.max(beforeMin, config.minimums.per_drawer_cents);
-    const minApplied = amount > beforeMin;
+    const sqftRate = roundCents(config.product.rate_cents_per_sqft * mult);
+    const perCopyRaw = roundCents(dims.area_sqft * config.product.rate_cents_per_sqft * mult);
+    const perCopy = Math.max(perCopyRaw, config.minimums.per_drawer_cents);
+    const minApplied = perCopy > perCopyRaw;
+    const amount = perCopy * copies;
 
+    const dimsText = `${fmtIn(dims.width_in)} × ${fmtIn(dims.length_in)}, ${fmtIn(thickness)} foam`;
     totalAreaSqft += dims.area_sqft;
+    totalPhysicalDrawers += copies;
     lines.push({
       position: ++position,
       kind: "product",
       description:
-        `Custom Foam Tool Organizer — ${label} ` +
-        `(${fmtIn(dims.width_in)} × ${fmtIn(dims.length_in)}, ${fmtIn(thickness)} foam)`,
+        `Custom Foam Tool Organizer — ${label} (${dimsText})` +
+        (copies > 1 ? ` × ${copies}` : ""),
       drawer_id: drawer.id,
-      qty: dims.area_sqft,
-      unit: "sqft",
-      unit_price_cents: roundCents(config.product.rate_cents_per_sqft * mult),
+      qty: copies,
+      unit: "copies",
+      unit_price_cents: perCopy,
       amount_cents: amount,
       included: false,
       meta: {
+        label,
+        dims_text: dimsText,
         width_in: dims.width_in,
         length_in: dims.length_in,
         thickness_in: thickness,
         area_sqft: dims.area_sqft,
         thickness_multiplier: mult,
+        sqft_rate_cents: sqftRate,
+        copies,
+        per_copy_cents: perCopy,
         drawer_minimum_applied: minApplied,
-        ...(minApplied ? { amount_before_minimum_cents: beforeMin } : {}),
+        ...(minApplied ? { per_copy_before_minimum_cents: perCopyRaw } : {}),
       },
     });
   }
@@ -217,7 +258,7 @@ export function computeQuote(
       continue;
     }
     const qty =
-      upgrade.kind === "per_drawer" ? drawerCount : upgrade.kind === "per_sqft" ? totalAreaSqft : 1;
+      upgrade.kind === "per_drawer" ? totalPhysicalDrawers : upgrade.kind === "per_sqft" ? totalAreaSqft : 1;
     lines.push({
       position: ++position,
       kind: "upgrade",
@@ -232,19 +273,23 @@ export function computeQuote(
     });
   }
 
-  // ---- 4. Delivery, Installation & Test Fit -------------------------------
+  // ---- 4. Delivery, Installation & Test Fit (travel to deliver) -----------
   const svcInstall = config.services.delivery_install;
+  const deliverTravel = roundCents(miles * svcInstall.travel_cents_per_mile);
   lines.push({
     position: ++position,
     kind: "delivery_install",
-    description: svcInstall.label,
+    description:
+      miles > 0
+        ? `${svcInstall.label} (${round2(miles)} mi round-trip @ $${dollars(svcInstall.travel_cents_per_mile)}/mi)`
+        : svcInstall.label,
     drawer_id: null,
     qty: null,
     unit: null,
     unit_price_cents: null,
-    amount_cents: svcInstall.included ? 0 : roundCents(svcInstall.price_cents),
-    included: svcInstall.included,
-    meta: {},
+    amount_cents: deliverTravel,
+    included: false,
+    meta: { travel_cents: deliverTravel, round_trip_miles: miles },
   });
 
   // ---- 5. Minimum Order Adjustment ----------------------------------------
