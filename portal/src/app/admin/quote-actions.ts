@@ -21,17 +21,26 @@ function num(formData: FormData, key: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-export async function createQuoteAction(formData: FormData) {
+/**
+ * Core pricing routine shared by the (legacy) redirect-style action and the
+ * new return-style action the Generate-quote modal uses. Returns a discriminated
+ * result instead of throwing/redirecting so either caller can shape the outcome.
+ */
+async function priceAndSaveQuote(
+  formData: FormData,
+): Promise<{ ok: true; orderId: string } | { ok: false; error: string }> {
   const orderId = String(formData.get("order_id") ?? "");
-  if (!orderId) throw new Error("Missing order id.");
-  const back = `/admin/orders/${orderId}`;
+  if (!orderId) return { ok: false, error: "Missing order id." };
 
   const miles = num(formData, "round_trip_miles");
   const driveHours = num(formData, "drive_hours_per_trip");
   const installHours = num(formData, "install_hours");
   const trips = num(formData, "trips");
   if (miles == null || driveHours == null || installHours == null) {
-    redirect(`${back}?error=${encodeURIComponent("Quote needs round-trip miles, drive hours, and install hours (0 is allowed).")}`);
+    return {
+      ok: false,
+      error: "Quote needs round-trip miles, drive hours, and install hours (0 is allowed).",
+    };
   }
 
   const supabase = await createClient();
@@ -43,14 +52,14 @@ export async function createQuoteAction(formData: FormData) {
     .eq("active", true)
     .single();
   if (configError || !configRow) {
-    redirect(`${back}?error=${encodeURIComponent("No active pricing config — apply the quoting migration first.")}`);
+    return { ok: false, error: "No active pricing config — apply the quoting migration first." };
   }
 
   let config;
   try {
     config = parsePricingConfig(configRow.config);
   } catch (e) {
-    redirect(`${back}?error=${encodeURIComponent(`Active pricing config is invalid: ${(e as Error).message}`)}`);
+    return { ok: false, error: `Active pricing config is invalid: ${(e as Error).message}` };
   }
 
   // 2. The order's drawers (RLS: staff drawer SELECT policy).
@@ -58,15 +67,15 @@ export async function createQuoteAction(formData: FormData) {
     .from("drawer")
     .select("id, nickname, dimensions, box_id, quantity")
     .eq("order_id", orderId);
-  if (drawersError) redirect(`${back}?error=${encodeURIComponent(drawersError.message)}`);
+  if (drawersError) return { ok: false, error: drawersError.message };
   if (!drawers || drawers.length === 0) {
-    redirect(`${back}?error=${encodeURIComponent("This order has no drawers to price yet.")}`);
+    return { ok: false, error: "This order has no drawers to price yet." };
   }
 
   // 2b. Boxes for this order — physical copies = box.quantity × drawer.quantity.
   const { data: boxes } = await supabase.from("box").select("id, quantity").eq("order_id", orderId);
   const boxQty = new Map<string, number>((boxes ?? []).map((b) => [b.id as string, Number(b.quantity) || 1]));
-  const drawerInputs = drawers!.map((d) => ({
+  const drawerInputs = drawers.map((d) => ({
     id: d.id as string,
     nickname: (d.nickname as string) ?? null,
     dimensions: d.dimensions,
@@ -75,22 +84,22 @@ export async function createQuoteAction(formData: FormData) {
 
   // 3. Price (pure, deterministic).
   const inputs: QuoteInputs = {
-    round_trip_miles: miles!,
-    drive_hours_per_trip: driveHours!,
-    install_hours: installHours!,
+    round_trip_miles: miles,
+    drive_hours_per_trip: driveHours,
+    install_hours: installHours,
     ...(trips != null && trips > 0 ? { trips } : {}),
   };
-  const quote = computeQuote(drawerInputs, inputs, config!);
+  const quote = computeQuote(drawerInputs, inputs, config);
   if (quote.lines.filter((l) => l.kind === "product").length === 0) {
     const reasons = quote.unpriced_drawers.map((d) => `${d.nickname ?? d.id.slice(0, 8)}: ${d.reason}`).join("; ");
-    redirect(`${back}?error=${encodeURIComponent(`No drawer could be priced — ${reasons}`)}`);
+    return { ok: false, error: `No drawer could be priced — ${reasons}` };
   }
 
   // 4. Persist through the integrity-checked RPC.
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const { error: saveError } = await supabase.rpc("save_quote", {
     p_order_id: orderId,
-    p_config_id: configRow!.id,
+    p_config_id: configRow.id,
     p_quote: {
       subtotal_cents: quote.subtotal_cents,
       total_cents: quote.total_cents,
@@ -106,9 +115,36 @@ export async function createQuoteAction(formData: FormData) {
     p_lines: quote.lines,
     p_notes: notes,
   });
-  if (saveError) redirect(`${back}?error=${encodeURIComponent(saveError.message)}`);
+  if (saveError) return { ok: false, error: saveError.message };
 
+  return { ok: true, orderId };
+}
+
+/** Legacy redirect-style action (kept for compatibility; UI now uses quoteFormAction). */
+export async function createQuoteAction(formData: FormData) {
+  const res = await priceAndSaveQuote(formData);
+  const orderId = String(formData.get("order_id") ?? "");
+  const back = `/admin/orders/${orderId}`;
+  if (!res.ok) redirect(`${back}?error=${encodeURIComponent(res.error)}`);
   revalidatePath(back);
+}
+
+/** Shape returned to the Generate-quote modal via useActionState. */
+export type QuoteFormState = { ok?: boolean; error?: string };
+
+/**
+ * Return-style Generate-quote action for the modal. Errors come back as state
+ * (rendered inside the dialog) and success returns { ok: true } so the client
+ * can close the overlay — no page-level ?error= redirect for the happy path.
+ */
+export async function quoteFormAction(
+  _prev: QuoteFormState,
+  formData: FormData,
+): Promise<QuoteFormState> {
+  const res = await priceAndSaveQuote(formData);
+  if (!res.ok) return { error: res.error };
+  revalidatePath(`/admin/orders/${res.orderId}`);
+  return { ok: true };
 }
 
 export async function setQuoteStatusAction(formData: FormData) {
