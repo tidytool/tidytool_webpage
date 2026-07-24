@@ -152,6 +152,20 @@ test("mileage sanity guard warns on absurd distance (not blocked)", () => {
   assert.equal(line(q, "measurement_design").amount_cents, 10000 + 400 * 125); // still priced
 });
 
+test("drive-hours guard catches the impossible-speed typo (20 hr / 40 mi)", () => {
+  const bad = computeQuote([legacyDrawer("d1")], { round_trip_miles: 40, drive_hours_per_trip: 20, install_hours: 1 }, cfg);
+  const good = computeQuote([legacyDrawer("d1")], { round_trip_miles: 40, drive_hours_per_trip: 1, install_hours: 1 }, cfg);
+  assert.ok(bad.warnings.some((w) => w.includes("mph")));
+  // the bad hours tank the internal margin but leave the CUSTOMER total identical:
+  assert.equal(bad.total_cents, good.total_cents);
+  assert.ok(bad.estimated_cost_cents > good.estimated_cost_cents);
+});
+
+test("install-hours guard warns on absurd hours", () => {
+  const q = computeQuote([legacyDrawer("d1")], { ...INPUTS, install_hours: 40 }, cfg);
+  assert.ok(q.warnings.some((w) => w.includes("install hours")));
+});
+
 // ---- config-driven bits -----------------------------------------------------
 test("thickness multiplier scales per-copy foam and its sqft rate", () => {
   const thick: PricingConfig = parsePricingConfig(

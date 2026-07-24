@@ -155,6 +155,20 @@ export function computeQuote(
       `round-trip miles = ${round2(miles)} — unusually high; confirm it isn't a typo (customer travel is billed twice at this distance)`,
     );
   }
+  // Labor-hours sanity: a 20-hour drive for a 40-mile trip is a data-entry typo.
+  // These inputs only affect the INTERNAL margin estimate, never the customer
+  // price — but a bad value makes the margin flag meaningless, so surface it.
+  const dh = inputs.drive_hours_per_trip;
+  if (dh >= 1 && miles > 0 && miles / dh < 5) {
+    warnings.push(
+      `drive hours/trip = ${round2(dh)} for a ${round2(miles)} mi round trip ≈ ${round2(miles / dh)} mph — check the hours (affects the internal margin, not the customer price)`,
+    );
+  } else if (dh > 12) {
+    warnings.push(`drive hours/trip = ${round2(dh)} is unusually high — confirm it isn't a typo`);
+  }
+  if (inputs.install_hours > 12) {
+    warnings.push(`install hours = ${round2(inputs.install_hours)} is unusually high — confirm it isn't a typo`);
+  }
 
   // ---- 1. On-site Measurement & Design (one-time design base + travel) ----
   const svcMeasure = config.services.measurement_design;
