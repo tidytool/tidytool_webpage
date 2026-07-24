@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { lookupRoundTripMiles } from "@/lib/distance";
 
 export async function updateOrderSiteAction(formData: FormData) {
   const orderId = String(formData.get("order_id") ?? "");
@@ -30,6 +31,30 @@ export async function updateOrderSiteAction(formData: FormData) {
     p_order_id: orderId,
     p_site_address: address === "" ? null : address,
     p_round_trip_miles: miles,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(back);
+}
+
+/**
+ * Auto-fill round-trip miles by driving the entered site address against
+ * SHOP_ORIGIN_ADDRESS (Google Distance Matrix). Saves the address + computed
+ * miles in one step. Falls back to a friendly error if not configured.
+ */
+export async function lookupOrderDistanceAction(formData: FormData) {
+  const orderId = String(formData.get("order_id") ?? "");
+  if (!orderId) throw new Error("Missing order id.");
+  const back = `/admin/orders/${orderId}`;
+  const address = String(formData.get("site_address") ?? "").trim();
+
+  const result = await lookupRoundTripMiles(address);
+  if (!result.ok) redirect(`${back}?error=${encodeURIComponent(result.error)}`);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_set_order_site", {
+    p_order_id: orderId,
+    p_site_address: address === "" ? null : address,
+    p_round_trip_miles: result.round_trip_miles,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   revalidatePath(back);

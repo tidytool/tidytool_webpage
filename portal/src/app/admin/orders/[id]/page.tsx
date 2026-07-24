@@ -15,7 +15,7 @@ import {
   deleteOrderAction,
 } from "../../actions";
 import { createBoxAction } from "../../box-actions";
-import { updateOrderSiteAction } from "../../site-actions";
+import { updateOrderSiteAction, lookupOrderDistanceAction } from "../../site-actions";
 import { BoxCard } from "@/components/BoxCard";
 import { DrawerBoxControls } from "@/components/DrawerBoxControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -174,8 +174,12 @@ export default async function AdminOrderDetailPage({
             <input name="round_trip_miles" inputMode="decimal" defaultValue={o.round_trip_miles ?? ""} placeholder="e.g. 40" />
           </label>
           <button className="btn btn--ghost" type="submit">Save site</button>
+          <button className="btn btn--ghost" type="submit" formAction={lookupOrderDistanceAction}>
+            Look up distance
+          </button>
           <span className="muted" style={{ fontSize: "0.8rem", flexBasis: "100%" }}>
-            Saved distance pre-fills the quote form, so miles are entered once per order (not re-typed per quote).
+            &ldquo;Look up distance&rdquo; drives the address against the shop origin and fills round-trip miles
+            automatically. The saved distance pre-fills the quote form, so miles are entered once per order.
           </span>
         </form>
       </section>
