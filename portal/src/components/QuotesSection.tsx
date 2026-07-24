@@ -65,10 +65,13 @@ export function QuotesSection({
   orderId,
   quotes,
   currentDrawerCopies,
+  defaultMiles,
 }: {
   orderId: string;
   quotes: AdminQuote[];
   currentDrawerCopies: { id: string; copies: number }[];
+  /** Saved round-trip distance on the order — pre-fills the miles input. */
+  defaultMiles: number | null;
 }) {
   return (
     <section style={{ marginTop: "1.5rem" }}>
@@ -94,8 +97,14 @@ export function QuotesSection({
         >
           <input type="hidden" name="order_id" value={orderId} />
           <label className="ctrl">
-            <span>Round-trip miles</span>
-            <input name="round_trip_miles" inputMode="decimal" required placeholder="e.g. 30" />
+            <span>Round-trip miles{defaultMiles != null ? " (from order)" : ""}</span>
+            <input
+              name="round_trip_miles"
+              inputMode="decimal"
+              required
+              placeholder="e.g. 30"
+              defaultValue={defaultMiles ?? ""}
+            />
           </label>
           <label className="ctrl">
             <span>Drive hours per trip</span>

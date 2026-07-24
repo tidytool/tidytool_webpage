@@ -15,6 +15,7 @@ import {
   deleteOrderAction,
 } from "../../actions";
 import { createBoxAction } from "../../box-actions";
+import { updateOrderSiteAction } from "../../site-actions";
 import { BoxCard } from "@/components/BoxCard";
 import { DrawerBoxControls } from "@/components/DrawerBoxControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -161,6 +162,22 @@ export default async function AdminOrderDetailPage({
             {detail.customer ? "Reassign" : "Assign"}
           </button>
         </form>
+
+        <form action={updateOrderSiteAction} style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap", alignItems: "end", borderTop: "1px solid var(--c-border)", paddingTop: "1rem" }}>
+          <input type="hidden" name="order_id" value={o.id} />
+          <label className="ctrl" style={{ flex: "1 1 260px" }}>
+            <span>Site address (for travel)</span>
+            <input name="site_address" defaultValue={o.site_address ?? ""} placeholder="Customer scan/delivery address" />
+          </label>
+          <label className="ctrl" style={{ flex: "0 0 150px" }}>
+            <span>Round-trip miles</span>
+            <input name="round_trip_miles" inputMode="decimal" defaultValue={o.round_trip_miles ?? ""} placeholder="e.g. 40" />
+          </label>
+          <button className="btn btn--ghost" type="submit">Save site</button>
+          <span className="muted" style={{ fontSize: "0.8rem", flexBasis: "100%" }}>
+            Saved distance pre-fills the quote form, so miles are entered once per order (not re-typed per quote).
+          </span>
+        </form>
       </section>
 
       <section style={{ marginTop: "1.5rem" }}>
@@ -252,7 +269,12 @@ export default async function AdminOrderDetailPage({
         </div>
       </section>
 
-      <QuotesSection orderId={o.id} quotes={quotes} currentDrawerCopies={currentDrawerCopies} />
+      <QuotesSection
+        orderId={o.id}
+        quotes={quotes}
+        currentDrawerCopies={currentDrawerCopies}
+        defaultMiles={o.round_trip_miles}
+      />
 
       <section className="card card--danger" style={{ marginTop: "1.5rem" }}>
         <h2 style={{ color: "var(--c-danger)" }}>Danger zone</h2>
