@@ -33,7 +33,43 @@ function pct(x: number | null): string {
   return x == null ? "—" : `${(x * 100).toFixed(1)}%`;
 }
 
-export function QuotesSection({ orderId, quotes }: { orderId: string; quotes: AdminQuote[] }) {
+/** Drawer→copies as the quote was priced (from its product-line meta). */
+function quotedCopies(quote: AdminQuote): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const l of quote.lines) {
+    if (l.kind === "product" && l.drawer_id) {
+      const c = typeof l.meta?.copies === "number" ? l.meta.copies : 1;
+      m.set(l.drawer_id, c);
+    }
+  }
+  return m;
+}
+
+/**
+ * A quote is stale if the order's physical structure (which drawers, and how
+ * many copies of each) changed after it was priced. Compares the quote's
+ * product lines against the order's current drawer/box/copy layout. Ignores
+ * mileage/hours changes — those are re-entered per quote, not "structure".
+ */
+function isStale(quote: AdminQuote, current: { id: string; copies: number }[]): boolean {
+  const priced = quotedCopies(quote);
+  const now = new Map(current.map((d) => [d.id, d.copies]));
+  if (priced.size !== now.size) return true;
+  for (const [id, copies] of now) {
+    if (!priced.has(id) || priced.get(id) !== copies) return true;
+  }
+  return false;
+}
+
+export function QuotesSection({
+  orderId,
+  quotes,
+  currentDrawerCopies,
+}: {
+  orderId: string;
+  quotes: AdminQuote[];
+  currentDrawerCopies: { id: string; copies: number }[];
+}) {
   return (
     <section style={{ marginTop: "1.5rem" }}>
       <h2>
@@ -85,8 +121,16 @@ export function QuotesSection({ orderId, quotes }: { orderId: string; quotes: Ad
         </form>
       </div>
 
-      {quotes.map((q) => (
-        <div key={q.id} className="card" style={{ marginTop: "1rem" }}>
+      {quotes.map((q) => {
+        const stale = isStale(q, currentDrawerCopies);
+        return (
+        <div key={q.id} className="card" style={{ marginTop: "1rem", borderColor: stale ? "var(--c-warn, #c80)" : undefined }}>
+          {stale ? (
+            <p className="banner--warn" role="status" style={{ marginTop: 0 }}>
+              ⚠ The order&rsquo;s boxes or drawer copies changed after this quote was priced.
+              Regenerate for current pricing.
+            </p>
+          ) : null}
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
             <strong>{formatCents(q.total_cents)}</strong>
             <span className="chip">
@@ -200,7 +244,8 @@ export function QuotesSection({ orderId, quotes }: { orderId: string; quotes: Ad
             </div>
           ) : null}
         </div>
-      ))}
+        );
+      })}
     </section>
   );
 }

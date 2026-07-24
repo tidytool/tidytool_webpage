@@ -90,3 +90,25 @@ export async function setDrawerQuantityAction(formData: FormData) {
   if (error) redirect(`${backTo(orderId)}?error=${encodeURIComponent(error.message)}`);
   revalidatePath(backTo(orderId));
 }
+
+/** Combined box-placement + copies for one drawer (one "Apply" in the UI). */
+export async function updateDrawerPlacementAction(formData: FormData) {
+  const orderId = String(formData.get("order_id") ?? "");
+  const drawerId = String(formData.get("drawer_id") ?? "");
+  const boxId = String(formData.get("box_id") ?? "").trim();
+  const quantity = Math.max(1, Math.floor(Number(formData.get("quantity")) || 1));
+  if (!orderId || !drawerId) throw new Error("Missing ids.");
+
+  const supabase = await createClient();
+  const { error: assignErr } = await supabase.rpc("assign_drawer_to_box", {
+    p_drawer_id: drawerId,
+    p_box_id: boxId === "" ? null : boxId,
+  });
+  if (assignErr) redirect(`${backTo(orderId)}?error=${encodeURIComponent(assignErr.message)}`);
+  const { error: qtyErr } = await supabase.rpc("admin_set_drawer_quantity", {
+    p_drawer_id: drawerId,
+    p_quantity: quantity,
+  });
+  if (qtyErr) redirect(`${backTo(orderId)}?error=${encodeURIComponent(qtyErr.message)}`);
+  revalidatePath(backTo(orderId));
+}
