@@ -3,24 +3,40 @@ import {
   type AdminPipelineRow,
   type AdminOrphanOrder,
   type AdminCustomer,
+  type StatusPipelineData,
 } from "@/lib/types";
 import { UnassignedOrders } from "@/components/UnassignedOrders";
 import { PipelineList } from "@/components/PipelineList";
+import { StatusPipeline } from "@/components/StatusPipeline";
 
 export const dynamic = "force-dynamic";
 
+const EMPTY_STATUS: StatusPipelineData = {
+  counts: [],
+  blockers: {
+    drawers_awaiting_customer: 0,
+    drawers_rework: 0,
+    drawers_on_hold: 0,
+    orders_on_hold: 0,
+    orders_overridden: 0,
+  },
+  aging: [],
+  queue: [],
+  cycle: { window_days: 90, completed: 0, median_days: null },
+};
+
 export default async function AdminPage() {
   const supabase = await createClient();
-  const [pipelineRes, orphansRes, customersRes] = await Promise.all([
+  const [statusRes, pipelineRes, orphansRes, customersRes] = await Promise.all([
+    supabase.rpc("get_status_pipeline"),
     supabase.rpc("get_admin_pipeline"),
     supabase.rpc("get_admin_orphan_orders"),
     supabase.rpc("get_admin_customers"),
   ]);
+  const status = (statusRes.data ?? EMPTY_STATUS) as StatusPipelineData;
   const pipeline = (pipelineRes.data ?? []) as AdminPipelineRow[];
   const orphans = (orphansRes.data ?? []) as AdminOrphanOrder[];
   const customers = (customersRes.data ?? []) as AdminCustomer[];
-
-  const awaiting = pipeline.filter((d) => d.customer_approval_status === "pending").length;
 
   return (
     <main className="wrap wrap--wide">
@@ -28,13 +44,18 @@ export default async function AdminPage() {
         <div>
           <p className="eyebrow">Admin</p>
           <h1>Pipeline</h1>
-        </div>
-        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-          <span className="chip num">Drawers <strong>{pipeline.length}</strong></span>
-          <span className="chip num">Awaiting approval <strong>{awaiting}</strong></span>
-          <span className="chip num">Unassigned <strong>{orphans.length}</strong></span>
+          <p className="muted sub">
+            Live order positions, blockers, and aging — updating as tidyCAM,
+            tidyCAD, and the portal move work.
+          </p>
         </div>
       </div>
+
+      {statusRes.error ? (
+        <p className="banner--err" role="alert">{statusRes.error.message}</p>
+      ) : (
+        <StatusPipeline initial={status} />
+      )}
 
       {orphans.length > 0 ? (
         <section style={{ marginTop: "1.5rem" }}>
@@ -48,12 +69,16 @@ export default async function AdminPage() {
       ) : null}
 
       <section style={{ marginTop: "1.5rem" }}>
-        <h2>All drawers</h2>
-        {pipeline.length === 0 ? (
-          <p className="muted">Nothing in the pipeline yet.</p>
-        ) : (
-          <PipelineList pipeline={pipeline} />
-        )}
+        <details className="reveal">
+          <summary>All drawers ({pipeline.length})</summary>
+          <div style={{ marginTop: "0.7rem" }}>
+            {pipeline.length === 0 ? (
+              <p className="muted">Nothing in the pipeline yet.</p>
+            ) : (
+              <PipelineList pipeline={pipeline} />
+            )}
+          </div>
+        </details>
       </section>
     </main>
   );

@@ -302,3 +302,82 @@ export type AdminQuote = {
   };
   lines: AdminQuoteLine[];
 };
+
+/* ---------- Status backbone (20260727100000_status_backbone) ---------- */
+
+/** One customer-facing step from get_order_tracker().steps — the pizza tracker. */
+export type TrackerStep = {
+  step: number;
+  label: string;
+  state: "done" | "current" | "todo";
+  entered_at: string | null;
+  /** true when the timestamp was reconstructed by the backfill, not measured. */
+  inferred: boolean;
+};
+
+/** Shape of get_order_tracker(p_order_id). status = coalesce(manual, computed). */
+export type OrderTrackerData = {
+  order_id: string;
+  project_name: string | null;
+  status: string;
+  current_step: number;
+  exception: { state: "on_hold" | "cancelled"; since: string | null } | null;
+  blockers: { awaiting_approval: number; rework: number; on_hold: number };
+  completion: { delivered: number; total: number };
+  delivery_scheduled_at: string | null;
+  steps: TrackerStep[];
+};
+
+/** Row from get_work_queue() — the staff/tidyCAD outstanding-work view. */
+export type WorkQueueRow = {
+  drawer_id: string;
+  nickname: string | null;
+  photo_url: string | null;
+  stage: string;
+  stage_label: string;
+  stage_changed_at: string | null;
+  days_in_stage: number;
+  state: "active" | "on_hold" | "rework" | "cancelled";
+  state_reason: string | null;
+  blocked_on: "us" | "customer" | "hold" | "none";
+  order_id: string | null;
+  project_name: string | null;
+  customer_name: string | null;
+  order_status: string | null;
+  order_state: string | null;
+};
+
+/** Shape of get_status_pipeline(p_days) — the admin pipeline rollup. */
+export type StatusPipelineData = {
+  counts: {
+    status: string;
+    label: string;
+    sort_order: number;
+    customer_step: number | null;
+    n: number;
+  }[];
+  blockers: {
+    drawers_awaiting_customer: number;
+    drawers_rework: number;
+    drawers_on_hold: number;
+    orders_on_hold: number;
+    orders_overridden: number;
+  };
+  aging: {
+    id: string;
+    project_name: string | null;
+    customer_name: string | null;
+    status: string;
+    label: string;
+    overridden: boolean;
+    status_changed_at: string | null;
+    days_in_status: number;
+    delivery_scheduled_at: string | null;
+    drawer_total: number;
+    drawer_delivered: number;
+    blocked_on_customer: number;
+    blocked_internal: number;
+  }[];
+  queue: { stage: string; label: string; sort_order: number; n: number }[];
+  cycle: { window_days: number; completed: number; median_days: number | null };
+};

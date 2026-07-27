@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { Header } from "@/components/Header";
+import { OrderTracker } from "@/components/OrderTracker";
 import { createClient } from "@/lib/supabase/server";
 import { getClaims } from "@/lib/supabase/auth";
 import {
   type MyDrawer,
+  type OrderTrackerData,
   STATUS_LABELS,
   formatDimensions,
 } from "@/lib/types";
@@ -67,6 +69,23 @@ function DrawerCard({ d }: { d: MyDrawer }) {
   );
 }
 
+function DrawerGrid({ drawers }: { drawers: MyDrawer[] }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "1rem",
+        marginTop: "1rem",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+      }}
+    >
+      {drawers.map((d) => (
+        <DrawerCard key={d.id} d={d} />
+      ))}
+    </div>
+  );
+}
+
 export default async function DashboardPage() {
   const claims = await getClaims();
   if (!claims) redirect("/login");
@@ -84,15 +103,39 @@ export default async function DashboardPage() {
   const migrationPending =
     error?.code === "PGRST202" || /function .* does not exist/i.test(error?.message ?? "");
 
+  // Group drawers by order and fetch each order's pizza tracker. Tracker
+  // failures degrade gracefully to the plain drawer grid — never block the page.
+  const byOrder = new Map<string, MyDrawer[]>();
+  const loose: MyDrawer[] = [];
+  for (const d of drawers) {
+    if (d.order_id) {
+      const arr = byOrder.get(d.order_id) ?? [];
+      arr.push(d);
+      byOrder.set(d.order_id, arr);
+    } else {
+      loose.push(d);
+    }
+  }
+  const orderIds = [...byOrder.keys()];
+  const trackers = new Map<string, OrderTrackerData>();
+  if (orderIds.length > 0) {
+    const results = await Promise.all(
+      orderIds.map((id) => supabase.rpc("get_order_tracker", { p_order_id: id })),
+    );
+    results.forEach((res, i) => {
+      if (!res.error && res.data) trackers.set(orderIds[i], res.data as OrderTrackerData);
+    });
+  }
+
   return (
     <>
       <Header email={email} isAdmin={isAdmin} />
       <main className="wrap">
-        <p className="eyebrow">Your designs</p>
+        <p className="eyebrow">Your orders</p>
         <h1>Welcome back</h1>
         <p className="muted">
-          Review and approve your foam layouts. Approving a design is your go-ahead
-          for us to cut.
+          Follow each order from scan to install, and approve designs when
+          they&apos;re ready — approving is your go-ahead for us to cut.
         </p>
 
         {migrationPending ? (
@@ -126,18 +169,32 @@ export default async function DashboardPage() {
             </p>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gap: "1rem",
-              marginTop: "1.25rem",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            }}
-          >
-            {drawers.map((d) => (
-              <DrawerCard key={d.id} d={d} />
-            ))}
-          </div>
+          <>
+            {orderIds.map((orderId) => {
+              const group = byOrder.get(orderId) ?? [];
+              const tracker = trackers.get(orderId);
+              const firstPending = group.find(
+                (d) => d.customer_approval_status === "pending" && d.design_preview_url,
+              );
+              return (
+                <section key={orderId} style={{ marginTop: "1.5rem" }}>
+                  {tracker ? (
+                    <OrderTracker
+                      t={tracker}
+                      approveHref={firstPending ? `/approve/${firstPending.id}` : null}
+                    />
+                  ) : null}
+                  <DrawerGrid drawers={group} />
+                </section>
+              );
+            })}
+            {loose.length > 0 ? (
+              <section style={{ marginTop: "1.5rem" }}>
+                {orderIds.length > 0 ? <h2>Other designs</h2> : null}
+                <DrawerGrid drawers={loose} />
+              </section>
+            ) : null}
+          </>
         )}
       </main>
     </>
