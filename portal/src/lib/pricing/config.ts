@@ -9,9 +9,30 @@
  *
  * The live config is stored in the `pricing_config` table (jsonb `config`
  * column, one row with active=true). DEFAULT_PRICING_CONFIG below mirrors the
- * seed row from migration 20260724000000_quoting_engine.sql and doubles as the
- * offline/test fallback. All monetary values are INTEGER CENTS.
+ * seed row from the latest pricing migration and doubles as the offline/test
+ * fallback. All monetary values are INTEGER CENTS.
  */
+
+/**
+ * Product tiers (Sam, 2026-07-30). Set PER DRAWER — orders can mix tiers.
+ *   essential    — dual-color cut foam
+ *   professional — engraved tool labels
+ *   premium      — silk screen + thin protective top layer
+ * Each tier has its own $/sqft rate; the $40/copy floor and thickness
+ * multipliers apply identically across tiers.
+ */
+export const TIERS = ["essential", "professional", "premium"] as const;
+export type Tier = (typeof TIERS)[number];
+
+export const TIER_LABEL: Record<Tier, string> = {
+  essential: "Essential",
+  professional: "Professional",
+  premium: "Premium",
+};
+
+export function isTier(v: unknown): v is Tier {
+  return typeof v === "string" && (TIERS as readonly string[]).includes(v);
+}
 
 export type ThicknessMultipliers = {
   /** Keyed by thickness in inches, stringified (e.g. "0.5", "0.75", "1"). */
@@ -29,9 +50,19 @@ export type PricingConfig = {
   version: number;
   currency: "USD";
   product: {
-    /** Customer-facing base rate: cents per square foot of drawer footprint. */
+    /**
+     * Fallback rate: cents per sqft of drawer footprint. Kept for engines/configs
+     * that predate tiers (v2) — with tier_rates present this is only used when a
+     * tier has no entry. Equal to the essential rate by convention.
+     */
     rate_cents_per_sqft: number;
-    /** Multiplier applied to the base rate by foam thickness (inches, stringified key). */
+    /**
+     * Per-tier rates, cents per sqft (v3+). Missing map or missing tier key
+     * falls back to rate_cents_per_sqft (with an engine warning for
+     * non-essential tiers, since that likely means an outdated config).
+     */
+    tier_rates_cents_per_sqft?: Partial<Record<Tier, number>>;
+    /** Multiplier applied to the tier rate by foam thickness (inches, stringified key). */
     thickness_multipliers: ThicknessMultipliers;
     /** Assumed when a drawer has no readable thickness (standard = 0.5"). */
     default_thickness_in: number;
@@ -83,12 +114,17 @@ export type PricingConfig = {
 };
 
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
-  version: 2,
+  version: 3,
   currency: "USD",
   product: {
-    // $20/sqft covers foam material + cutting + on-site labor (scanning AND
+    // Rates cover foam material + cutting + on-site labor (scanning AND
     // install/test-fit). No separate labor lines — see services below.
-    rate_cents_per_sqft: 2000, // $20.00 / sqft
+    rate_cents_per_sqft: 2000, // fallback = essential rate ($20.00/sqft)
+    tier_rates_cents_per_sqft: {
+      essential: 2000, // $20.00 / sqft — dual-color cut
+      professional: 2400, // $24.00 / sqft — engraved labels
+      premium: 2800, // $28.00 / sqft — silk screen + protective top layer
+    },
     thickness_multipliers: { "0.5": 1.0 },
     default_thickness_in: 0.5,
     default_thickness_multiplier: 1.0,
@@ -133,6 +169,15 @@ export function parsePricingConfig(raw: unknown): PricingConfig {
   const isCents = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 0;
   if (!c.product || !isCents(c.product.rate_cents_per_sqft)) {
     throw new Error("pricing config: product.rate_cents_per_sqft must be integer cents");
+  }
+  if (c.product.tier_rates_cents_per_sqft != null) {
+    if (typeof c.product.tier_rates_cents_per_sqft !== "object") {
+      throw new Error("pricing config: product.tier_rates_cents_per_sqft must be an object");
+    }
+    for (const [k, v] of Object.entries(c.product.tier_rates_cents_per_sqft)) {
+      if (!isTier(k)) throw new Error(`pricing config: unknown tier "${k}" in tier_rates_cents_per_sqft`);
+      if (!isCents(v)) throw new Error(`pricing config: tier rate for "${k}" must be integer cents`);
+    }
   }
   if (!c.minimums || !isCents(c.minimums.per_drawer_cents) || !isCents(c.minimums.per_order_cents)) {
     throw new Error("pricing config: minimums must be integer cents");

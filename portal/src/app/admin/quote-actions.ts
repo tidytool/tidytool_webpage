@@ -63,9 +63,13 @@ async function priceAndSaveQuote(
   }
 
   // 2. The order's drawers (RLS: staff drawer SELECT policy).
+  // select("*") on purpose: naming `tier` explicitly would make this action
+  // error if the code deploys before migration 20260730120000 adds the column.
+  // With "*" the field is simply absent pre-migration and every drawer prices
+  // as Essential (the engine's fallback) — no coordinated deploy needed.
   const { data: drawers, error: drawersError } = await supabase
     .from("drawer")
-    .select("id, nickname, dimensions, box_id, quantity")
+    .select("*")
     .eq("order_id", orderId);
   if (drawersError) return { ok: false, error: drawersError.message };
   if (!drawers || drawers.length === 0) {
@@ -80,6 +84,7 @@ async function priceAndSaveQuote(
     nickname: (d.nickname as string) ?? null,
     dimensions: d.dimensions,
     copies: (d.box_id ? boxQty.get(d.box_id as string) ?? 1 : 1) * (Number(d.quantity) || 1),
+    tier: typeof d.tier === "string" ? d.tier : null,
   }));
 
   // 3. Price (pure, deterministic).

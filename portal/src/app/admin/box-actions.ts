@@ -91,12 +91,13 @@ export async function setDrawerQuantityAction(formData: FormData) {
   revalidatePath(backTo(orderId));
 }
 
-/** Combined box-placement + copies for one drawer (one "Apply" in the UI). */
+/** Combined box-placement + copies + tier for one drawer (one "Apply" in the UI). */
 export async function updateDrawerPlacementAction(formData: FormData) {
   const orderId = String(formData.get("order_id") ?? "");
   const drawerId = String(formData.get("drawer_id") ?? "");
   const boxId = String(formData.get("box_id") ?? "").trim();
   const quantity = Math.max(1, Math.floor(Number(formData.get("quantity")) || 1));
+  const tier = String(formData.get("tier") ?? "").trim();
   if (!orderId || !drawerId) throw new Error("Missing ids.");
 
   const supabase = await createClient();
@@ -110,5 +111,14 @@ export async function updateDrawerPlacementAction(formData: FormData) {
     p_quantity: quantity,
   });
   if (qtyErr) redirect(`${backTo(orderId)}?error=${encodeURIComponent(qtyErr.message)}`);
+  // Tier is optional in the form so this action also serves pre-tier UIs; the
+  // RPC validates the value and no-ops when unchanged.
+  if (tier !== "") {
+    const { error: tierErr } = await supabase.rpc("admin_set_drawer_tier", {
+      p_drawer_id: drawerId,
+      p_tier: tier,
+    });
+    if (tierErr) redirect(`${backTo(orderId)}?error=${encodeURIComponent(tierErr.message)}`);
+  }
   revalidatePath(backTo(orderId));
 }

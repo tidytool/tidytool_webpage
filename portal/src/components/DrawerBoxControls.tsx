@@ -1,17 +1,23 @@
 "use client";
 
 /**
- * Per-drawer placement controls: which box it belongs to + how many copies of
- * this drawer, with a LIVE "= N physical" readout and a single Apply button
- * that only lights up when something changed. Replaces the old separate
- * Move / Set buttons so there's one obvious save, and you can see the physical
- * count update before you even click.
+ * Per-drawer placement + tier controls: which box it belongs to, how many
+ * copies, and the product tier (Essential/Professional/Premium — picks the
+ * $/sqft rate), with a LIVE "= N physical" readout and a single Apply button
+ * that only lights up when something changed. One obvious save; you see the
+ * physical count update before you even click.
  */
 import { useState } from "react";
 import { updateDrawerPlacementAction } from "@/app/admin/box-actions";
 
 type Box = { id: string; label: string; quantity: number };
-type Drawer = { id: string; box_id: string | null; quantity: number };
+type Drawer = { id: string; box_id: string | null; quantity: number; tier: string };
+
+const TIER_OPTIONS = [
+  { value: "essential", label: "Essential" },
+  { value: "professional", label: "Professional" },
+  { value: "premium", label: "Premium" },
+];
 
 export function DrawerBoxControls({
   orderId,
@@ -24,10 +30,12 @@ export function DrawerBoxControls({
 }) {
   const [boxId, setBoxId] = useState(drawer.box_id ?? "");
   const [quantity, setQuantity] = useState(String(drawer.quantity));
+  const [tier, setTier] = useState(drawer.tier || "essential");
   const qtyNum = Math.max(1, Math.floor(Number(quantity) || 1));
   const selectedBox = boxes.find((b) => b.id === boxId) ?? null;
   const physical = (selectedBox ? selectedBox.quantity : 1) * qtyNum;
-  const dirty = boxId !== (drawer.box_id ?? "") || qtyNum !== drawer.quantity;
+  const dirty =
+    boxId !== (drawer.box_id ?? "") || qtyNum !== drawer.quantity || tier !== (drawer.tier || "essential");
 
   return (
     <form
@@ -50,6 +58,16 @@ export function DrawerBoxControls({
       <label className="ctrl" style={{ flex: "0 0 68px" }}>
         <span>Copies</span>
         <input name="quantity" type="number" min="1" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+      </label>
+      <label className="ctrl" style={{ flex: "0 0 128px" }}>
+        <span>Tier</span>
+        <select name="tier" value={tier} onChange={(e) => setTier(e.target.value)}>
+          {TIER_OPTIONS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </label>
       <span className="chip" style={{ alignSelf: "center" }}>
         = <strong>×{physical}</strong> physical

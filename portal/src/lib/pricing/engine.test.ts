@@ -166,6 +166,76 @@ test("install-hours guard warns on absurd hours", () => {
   assert.ok(q.warnings.some((w) => w.includes("install hours")));
 });
 
+// ---- product tiers ----------------------------------------------------------
+test("tiers price at their own $/sqft: essential $20, professional $24, premium $28", () => {
+  const mk = (tier?: string): QuoteDrawerInput => ({
+    id: `t-${tier ?? "none"}`,
+    nickname: tier ?? "untagged",
+    dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, // exactly 4 sqft
+    tier,
+  });
+  const q = computeQuote([mk("essential"), mk("professional"), mk("premium"), mk(undefined)], INPUTS, cfg);
+  const products = q.lines.filter((l) => l.kind === "product");
+  assert.deepEqual(
+    products.map((p) => p.unit_price_cents),
+    [4 * 2000, 4 * 2400, 4 * 2800, 4 * 2000], // untagged prices as essential
+  );
+  assert.deepEqual(
+    products.map((p) => p.meta.tier),
+    ["essential", "professional", "premium", "essential"],
+  );
+  assert.match(products[1].description, /\(Professional\)/);
+  assert.equal(products[1].meta.sqft_rate_cents, 2400);
+});
+
+test("unknown tier warns and prices as essential", () => {
+  const q = computeQuote(
+    [{ id: "x", nickname: "weird", dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, tier: "deluxe" }],
+    INPUTS,
+    cfg,
+  );
+  assert.equal(line(q, "product").unit_price_cents, 4 * 2000);
+  assert.ok(q.warnings.some((w) => w.includes('unknown tier "deluxe"')));
+});
+
+test("v2 config (no tier_rates): non-essential tier falls back to base rate WITH warning", () => {
+  const v2: PricingConfig = JSON.parse(JSON.stringify(cfg));
+  delete v2.product.tier_rates_cents_per_sqft;
+  const q = computeQuote(
+    [{ id: "p", nickname: "pro", dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, tier: "professional" }],
+    INPUTS,
+    parsePricingConfig(JSON.parse(JSON.stringify(v2))),
+  );
+  assert.equal(line(q, "product").unit_price_cents, 4 * 2000); // base rate, not silent $24
+  assert.ok(q.warnings.some((w) => w.includes("no Professional rate")));
+});
+
+test("tier rate composes with thickness multiplier; $40 floor applies per copy across tiers", () => {
+  const thick: PricingConfig = parsePricingConfig(
+    JSON.parse(JSON.stringify({ ...cfg, product: { ...cfg.product, thickness_multipliers: { "0.5": 1.0, "1": 1.5 } } })),
+  );
+  const p = line(
+    computeQuote(
+      [{ id: "x", nickname: "1in-pro", dimensions: { width: 24, length: 24, thickness: 1, units: "in" }, tier: "professional" }],
+      INPUTS,
+      thick,
+    ),
+    "product",
+  );
+  assert.equal(p.unit_price_cents, Math.round(4 * 2400 * 1.5)); // 4 sqft × $36/sqft
+  // tiny premium drawer still floors at $40/copy:
+  const tiny = line(
+    computeQuote(
+      [{ id: "t", nickname: "tiny", dimensions: { width: 6, length: 6, thickness: 0.5, units: "in" }, tier: "premium", copies: 2 }],
+      INPUTS,
+      cfg,
+    ),
+    "product",
+  );
+  assert.equal(tiny.unit_price_cents, 4000);
+  assert.equal(tiny.amount_cents, 8000);
+});
+
 // ---- config-driven bits -----------------------------------------------------
 test("thickness multiplier scales per-copy foam and its sqft rate", () => {
   const thick: PricingConfig = parsePricingConfig(
