@@ -48,7 +48,7 @@ test("QB amount column sums to the quote total", () => {
 test("product line: Qty = copies, Rate = per-copy, Qty×Rate = Amount", () => {
   const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
   const socket = rows.find((r) => r.description.startsWith("Socket Drawer"))!;
-  assert.equal(socket.item, "Custom Foam Tool Organizer");
+  assert.equal(socket.item, "Organizer Foam - Essential"); // untagged fixture drawers default to essential
   assert.equal(socket.qty, 2);
   assert.equal(socket.qty * socket.rate_cents, socket.amount_cents);
   assert.match(socket.description, /sqft @ \$20\.00\/sqft/);
@@ -63,8 +63,8 @@ test("floored drawer reads 'order minimum'", () => {
 
 test("service lines are real priced rows (not 'Included')", () => {
   const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
-  const m = rows.find((r) => r.item === "On-site Measurement & Design")!;
-  const d = rows.find((r) => r.item === "Delivery, Installation & Test Fit")!;
+  const m = rows.find((r) => r.item === "Scanning & Design")!;
+  const d = rows.find((r) => r.item === "Delivery & Installation")!;
   assert.equal(m.amount_cents, 10000 + 120 * 125); // $100 + travel
   assert.match(m.description, /design/);
   assert.equal(d.amount_cents, 120 * 125);
@@ -87,7 +87,7 @@ test("taxability: product/minimum taxable, services non-taxable (accountant plac
   const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
   for (const r of rows) {
     const isService =
-      r.item === "On-site Measurement & Design" || r.item === "Delivery, Installation & Test Fit";
+      r.item === "Scanning & Design" || r.item === "Delivery & Installation";
     assert.equal(r.taxable, !isService, `${r.item} taxable flag`);
   }
   // TSV mirrors the flag as a Y/N Tax column, one value per line row.
@@ -104,4 +104,23 @@ test("every line is Qty×Rate=Amount exact (QBO recompute can never drift)", () 
     assert.equal(r.qty * r.rate_cents, r.amount_cents, `${r.item}: ${r.qty} × ${r.rate_cents}`);
     assert.ok(Number.isInteger(r.qty), `${r.item}: Qty must be an integer, got ${r.qty}`);
   }
+});
+
+test("tiered drawers map to per-tier QBO items with per-tier rates in the description", () => {
+  const mixed: QuoteDrawerInput[] = [
+    { id: "e", nickname: "E", dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, tier: "essential" },
+    { id: "p", nickname: "P", dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, tier: "professional" },
+    { id: "m", nickname: "M", dimensions: { width: 24, length: 24, thickness: 0.5, units: "in" }, tier: "premium" },
+  ];
+  const rows = toQuickBooksRows(asAdminQuote(mixed));
+  const byNick = (n: string) => rows.find((r) => r.description.startsWith(n))!;
+  assert.equal(byNick("E").item, "Organizer Foam - Essential");
+  assert.equal(byNick("P").item, "Organizer Foam - Professional");
+  assert.equal(byNick("M").item, "Organizer Foam - Premium");
+  assert.match(byNick("P").description, /@ \$24\.00\/sqft/);
+  assert.match(byNick("M").description, /@ \$28\.00\/sqft/);
+  assert.equal(byNick("P").rate_cents, 4 * 2400);
+  assert.equal(byNick("M").rate_cents, 4 * 2800);
+  // all three tiers taxable (product kind)
+  for (const n of ["E", "P", "M"]) assert.equal(byNick(n).taxable, true);
 });

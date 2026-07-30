@@ -22,7 +22,7 @@
  * customer-facing surface.
  */
 
-import { type PricingConfig } from "./config";
+import { TIER_LABEL, isTier, type PricingConfig, type Tier } from "./config";
 import {
   isNormalizeFailure,
   normalizeDrawerDimensions,
@@ -75,6 +75,11 @@ export type QuoteDrawerInput = {
   dimensions: unknown;
   /** Physical copies of this drawer = box.quantity × drawer.quantity. Default 1. */
   copies?: number;
+  /**
+   * Product tier (essential | professional | premium), set per drawer.
+   * Unknown/missing values price as essential with a warning.
+   */
+  tier?: string | null;
 };
 
 export type QuoteInputs = {
@@ -135,6 +140,36 @@ function thicknessMultiplier(
 
 function fmtIn(n: number): string {
   return `${Math.round(n * 100) / 100}"`;
+}
+
+/**
+ * Resolve a drawer's tier and its $/sqft rate. Unknown tiers price as
+ * essential (warned). A tiered drawer on a config without tier_rates (v2)
+ * falls back to the flat rate — warned for non-essential tiers, since that
+ * silently underprices Professional/Premium work.
+ */
+function tierRate(
+  rawTier: string | null | undefined,
+  config: PricingConfig,
+  warnings: string[],
+  drawerLabel: string,
+): { tier: Tier; rate_cents: number } {
+  let tier: Tier = "essential";
+  if (rawTier != null && rawTier !== "") {
+    if (isTier(rawTier)) {
+      tier = rawTier;
+    } else {
+      warnings.push(`${drawerLabel}: unknown tier "${rawTier}" — priced as Essential`);
+    }
+  }
+  const rate = config.product.tier_rates_cents_per_sqft?.[tier];
+  if (rate != null) return { tier, rate_cents: rate };
+  if (tier !== "essential") {
+    warnings.push(
+      `${drawerLabel}: active pricing config has no ${TIER_LABEL[tier]} rate — used the base rate (update pricing_config to v3)`,
+    );
+  }
+  return { tier, rate_cents: config.product.rate_cents_per_sqft };
 }
 
 export function computeQuote(
@@ -217,6 +252,7 @@ export function computeQuote(
     for (const w of dims.warnings) warnings.push(`${label}: ${w}`);
 
     const copies = Math.max(1, Math.floor(drawer.copies ?? 1));
+    const { tier, rate_cents: baseTierRate } = tierRate(drawer.tier, config, warnings, label);
 
     let thickness = dims.thickness_in;
     if (thickness == null) {
@@ -225,8 +261,8 @@ export function computeQuote(
     }
     const mult = thicknessMultiplier(thickness, config, warnings, label);
 
-    const sqftRate = roundCents(config.product.rate_cents_per_sqft * mult);
-    const perCopyRaw = roundCents(dims.area_sqft * config.product.rate_cents_per_sqft * mult);
+    const sqftRate = roundCents(baseTierRate * mult);
+    const perCopyRaw = roundCents(dims.area_sqft * baseTierRate * mult);
     const perCopy = Math.max(perCopyRaw, config.minimums.per_drawer_cents);
     const minApplied = perCopy > perCopyRaw;
     const amount = perCopy * copies;
@@ -238,7 +274,7 @@ export function computeQuote(
       position: ++position,
       kind: "product",
       description:
-        `Custom Foam Tool Organizer — ${label} (${dimsText})` +
+        `Custom Foam Tool Organizer (${TIER_LABEL[tier]}) — ${label} (${dimsText})` +
         (copies > 1 ? ` × ${copies}` : ""),
       drawer_id: drawer.id,
       qty: copies,
@@ -248,6 +284,7 @@ export function computeQuote(
       included: false,
       meta: {
         label,
+        tier,
         dims_text: dimsText,
         width_in: dims.width_in,
         length_in: dims.length_in,

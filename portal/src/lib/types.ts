@@ -146,6 +146,11 @@ export type AdminDetailDrawer = {
   box_id: string | null;
   /** Copies of this drawer within its parent. Physical count = box.quantity × this. */
   quantity: number;
+  /**
+   * Product tier (essential | professional | premium) — picks the $/sqft rate.
+   * Optional/null until migration 20260730120000 is applied; treat missing as essential.
+   */
+  tier?: string | null;
   created_at: string;
 };
 

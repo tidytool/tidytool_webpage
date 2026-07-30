@@ -135,6 +135,7 @@ export default async function AdminOrderDetailPage({
           design_preview_url: d.design_preview_url,
           point_cloud_url: d.point_cloud_url,
           box_id: d.box_id,
+          tier: d.tier,
           quantity: d.quantity,
         }))}
       />

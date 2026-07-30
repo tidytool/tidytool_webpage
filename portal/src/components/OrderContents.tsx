@@ -28,6 +28,8 @@ type DrawerVM = {
   point_cloud_url: string | null;
   box_id: string | null;
   quantity: number;
+  /** essential | professional | premium; missing (pre-migration) renders as essential. */
+  tier?: string | null;
 };
 
 function Model3D({ url }: { url: string }) {
@@ -83,6 +85,9 @@ function DrawerRow({
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
           <strong>{drawer.nickname || "Untitled drawer"}</strong>
           {physical > 1 ? <span className="chip">×{physical} physical</span> : null}
+          {drawer.tier && drawer.tier !== "essential" ? (
+            <span className="chip">{drawer.tier.charAt(0).toUpperCase() + drawer.tier.slice(1)}</span>
+          ) : null}
         </div>
         <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.35rem" }}>
           <span className="chip">
@@ -115,7 +120,7 @@ function DrawerRow({
 
             <DrawerBoxControls
               orderId={orderId}
-              drawer={{ id: drawer.id, box_id: drawer.box_id, quantity: drawer.quantity }}
+              drawer={{ id: drawer.id, box_id: drawer.box_id, quantity: drawer.quantity, tier: drawer.tier ?? "essential" }}
               boxes={boxes}
             />
 

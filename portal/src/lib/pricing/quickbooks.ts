@@ -21,6 +21,7 @@
  * taxability is a property of what's sold, while the exemption is a property
  * of who buys it. The Amount column sums to quote.total_cents exactly.
  */
+import { TIER_LABEL, isTier } from "./config";
 import type { AdminQuote, AdminQuoteLine } from "../types";
 
 export type QbRow = {
@@ -36,18 +37,26 @@ export type QbRow = {
 };
 
 /**
- * Stable QuickBooks Product/Service item per line kind. Create these once in
- * QBO (type: Service) with EXACTLY these names — they are frozen: the future
- * API sync will resolve each name to its QBO ItemRef Id, and renaming either
- * side breaks the mapping.
+ * QuickBooks Product/Service item per line kind, matched to Sam's REAL QBO
+ * catalog (decision 2026-07-30): reuse "Scanning & Design" and
+ * "Delivery & Installation" as they exist; product lines map to a per-tier
+ * item ("Organizer Foam - Essential / - Professional / - Premium" — rename the
+ * old "- Engraved" to "- Professional" in QBO); "Minimum Order Adjustment" is
+ * new. These names are now the frozen contract: the future API sync resolves
+ * each to its QBO ItemRef Id, and renaming either side breaks the mapping.
  */
-const ITEM_BY_KIND: Record<AdminQuoteLine["kind"], string> = {
-  measurement_design: "On-site Measurement & Design",
-  product: "Custom Foam Tool Organizer",
+const ITEM_BY_KIND: Record<Exclude<AdminQuoteLine["kind"], "product">, string> = {
+  measurement_design: "Scanning & Design",
   upgrade: "Optional Upgrade",
-  delivery_install: "Delivery, Installation & Test Fit",
+  delivery_install: "Delivery & Installation",
   min_order_adjustment: "Minimum Order Adjustment",
 };
+
+/** Per-tier QBO item for product lines. Tier read from line meta; default essential. */
+function productItem(line: AdminQuoteLine): string {
+  const tier = isTier(line.meta?.tier) ? line.meta.tier : "essential";
+  return `Organizer Foam - ${TIER_LABEL[tier]}`;
+}
 
 /**
  * Line-level taxability (QBO TaxCodeRef TAX vs NON).
@@ -133,7 +142,7 @@ export function toQuickBooksRows(quote: AdminQuote): QbRow[] {
       const qty = l.qty ?? 1;
       const rate = l.unit_price_cents ?? l.amount_cents;
       return {
-        item: ITEM_BY_KIND.product,
+        item: productItem(l),
         description: descriptionFor(l),
         qty,
         rate_cents: rate,
