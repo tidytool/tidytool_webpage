@@ -1,4 +1,4 @@
-import { formatCents, type AdminQuote } from "@/lib/types";
+import { formatCents, formatQuoteNumber, type AdminQuote } from "@/lib/types";
 import { setQuoteStatusAction } from "@/app/admin/quote-actions";
 import { CustomerBreakdown } from "@/components/CustomerBreakdown";
 
@@ -97,6 +97,11 @@ export function QuotesSection({
               </p>
             ) : null}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+              {formatQuoteNumber(q.quote_number) ? (
+                <span className="chip">
+                  <strong className="num">{formatQuoteNumber(q.quote_number)}</strong>
+                </span>
+              ) : null}
               <strong>{formatCents(q.total_cents)}</strong>
               <span className="chip">
                 Status <strong>{STATUS_LABEL[q.status] ?? q.status}</strong>

@@ -224,6 +224,19 @@ export function formatCents(cents: number | null | undefined): string | null {
   })}`;
 }
 
+/**
+ * Human-readable quote number: "Q-0042". This exact string becomes the
+ * QuickBooks Online estimate DocNumber (enable "Custom transaction numbers"
+ * in QBO sales settings) — it is the cross-reference between a portal quote
+ * and its QBO estimate, so never reformat it once quotes have shipped.
+ * Null-tolerant: quotes created before migration 20260730000000 gain a number
+ * on backfill, but the UI must not crash if the RPC omits it.
+ */
+export function formatQuoteNumber(n: number | null | undefined): string | null {
+  if (n == null) return null;
+  return `Q-${String(n).padStart(4, "0")}`;
+}
+
 export function formatDimensions(dim: unknown): string | null {
   if (!dim) return null;
   let d = dim;
@@ -271,6 +284,16 @@ export type AdminQuoteLine = {
 export type AdminQuote = {
   id: string;
   created_at: string;
+  /**
+   * Sequential human-readable number (render via formatQuoteNumber → "Q-0042";
+   * future QuickBooks DocNumber). Null only until migration 20260730000000 is
+   * applied — treat as optional in the UI.
+   */
+  quote_number?: number | null;
+  /** QuickBooks Online Estimate.Id once pushed via the (future) API sync. */
+  qb_estimate_id?: string | null;
+  /** When the QBO estimate was created/last synced. Set by the future qb-sync. */
+  qb_synced_at?: string | null;
   status: "draft" | "sent" | "accepted" | "declined" | "expired" | "void";
   /** Integer CENTS. */
   subtotal_cents: number;
