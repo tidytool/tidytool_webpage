@@ -20,6 +20,7 @@ function asAdminQuote(drawers: QuoteDrawerInput[]): AdminQuote {
   const q = computeQuote(drawers, INPUTS, DEFAULT_PRICING_CONFIG);
   return {
     id: "q1", created_at: "2026-07-24T00:00:00Z", status: "draft",
+    quote_number: 42, qb_estimate_id: null, qb_synced_at: null,
     subtotal_cents: q.subtotal_cents, total_cents: q.total_cents,
     estimated_cost_cents: q.estimated_cost_cents, gross_profit_cents: q.gross_profit_cents,
     gross_margin: q.gross_margin, margin_target: q.margin_target, below_target: q.below_target,
@@ -74,10 +75,33 @@ test("TSV: header + row per line + Total; no cost/margin leaks", () => {
   const quote = asAdminQuote(SAMPLE);
   const tsv = toQuickBooksTsv(quote);
   const rows = tsv.split("\n");
-  assert.equal(rows[0], "Product/Service\tDescription\tQty\tRate\tAmount");
+  assert.equal(rows[0], "Product/Service\tDescription\tQty\tRate\tAmount\tTax");
   assert.equal(rows.length, 1 + quote.lines.length + 1);
   assert.ok(rows[rows.length - 1].startsWith("\tTotal\t"));
   assert.equal(tsv.includes("margin"), false);
   assert.equal(tsv.includes(String(quote.estimated_cost_cents)), false);
   assert.equal(tsv.includes(String(quote.gross_profit_cents)), false);
+});
+
+test("taxability: product/minimum taxable, services non-taxable (accountant placeholder)", () => {
+  const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
+  for (const r of rows) {
+    const isService =
+      r.item === "On-site Measurement & Design" || r.item === "Delivery, Installation & Test Fit";
+    assert.equal(r.taxable, !isService, `${r.item} taxable flag`);
+  }
+  // TSV mirrors the flag as a Y/N Tax column, one value per line row.
+  const tsv = toQuickBooksTsv(asAdminQuote(SAMPLE));
+  const body = tsv.split("\n").slice(1, -1);
+  for (const [i, line] of body.entries()) {
+    assert.match(line.split("\t")[5], /^[YN]$/, `row ${i} Tax cell`);
+  }
+});
+
+test("every line is Qty×Rate=Amount exact (QBO recompute can never drift)", () => {
+  const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
+  for (const r of rows) {
+    assert.equal(r.qty * r.rate_cents, r.amount_cents, `${r.item}: ${r.qty} × ${r.rate_cents}`);
+    assert.ok(Number.isInteger(r.qty), `${r.item}: Qty must be an integer, got ${r.qty}`);
+  }
 });

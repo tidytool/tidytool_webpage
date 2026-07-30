@@ -3,18 +3,23 @@
  *
  * Takes a stored quote and returns ONLY the customer lines (no cost/margin,
  * ever) shaped for a QuickBooks Online estimate. Two deliberate choices, both
- * so QB's Qty × Rate = Amount always holds:
+ * so QBO's own Amount = Qty × Rate recompute can never disagree with us:
  *
- *  1. Every line is Qty 1, Rate = Amount = the line's cents. Drawers are NOT
+ *  1. PRODUCT lines carry the copy count as Qty and the per-copy price as Rate
+ *     (both integer cents, so Qty × Rate = Amount is exact). Drawers are NOT
  *     sent as `sqft × $20` — the per-drawer $40 minimum and sqft rounding would
  *     make Qty×Rate disagree with Amount. The sqft math lives in the
  *     Description instead ("2.03 sqft @ $20.00/sqft" / "order minimum").
- *  2. "Included" service lines are real $0.00 rows so the value shows on the
- *     estimate without changing the total.
+ *  2. Every OTHER line is flat: Qty 1, Rate = Amount = the line's cents. This
+ *     must stay true for future per-sqft upgrades too — a fractional Qty would
+ *     let QBO's recompute drift from our stored amount.
  *
- * Tax is intentionally absent: QuickBooks applies it per customer (many
- * TidyTool buyers — schools, public colleges, gov — are exempt). This projection
- * is always pre-tax, and its Amount column sums to quote.total_cents exactly.
+ * Totals are pre-tax: QuickBooks applies tax per customer (many TidyTool
+ * buyers — schools, public colleges, gov — are exempt, and the exemption lives
+ * on the QBO customer record). Each row DOES carry a `taxable` flag — the
+ * line-level Tax checkbox / future TaxCodeRef (TAX vs NON) — because line
+ * taxability is a property of what's sold, while the exemption is a property
+ * of who buys it. The Amount column sums to quote.total_cents exactly.
  */
 import type { AdminQuote, AdminQuoteLine } from "../types";
 
@@ -22,19 +27,43 @@ export type QbRow = {
   /** QuickBooks Product/Service item name. */
   item: string;
   description: string;
-  /** Always 1 — the amount is carried on Rate, so Qty×Rate=Amount holds. */
+  /** Copies for product lines; 1 for everything else (Qty×Rate=Amount exact). */
   qty: number;
   rate_cents: number;
   amount_cents: number;
+  /** QBO line Tax checkbox / TaxCodeRef: true → TAX, false → NON. */
+  taxable: boolean;
 };
 
-/** Stable QuickBooks Product/Service item per line kind. Create these once in QB. */
+/**
+ * Stable QuickBooks Product/Service item per line kind. Create these once in
+ * QBO (type: Service) with EXACTLY these names — they are frozen: the future
+ * API sync will resolve each name to its QBO ItemRef Id, and renaming either
+ * side breaks the mapping.
+ */
 const ITEM_BY_KIND: Record<AdminQuoteLine["kind"], string> = {
   measurement_design: "On-site Measurement & Design",
   product: "Custom Foam Tool Organizer",
   upgrade: "Optional Upgrade",
   delivery_install: "Delivery, Installation & Test Fit",
   min_order_adjustment: "Minimum Order Adjustment",
+};
+
+/**
+ * Line-level taxability (QBO TaxCodeRef TAX vs NON).
+ *
+ * PLACEHOLDER SPLIT — CONFIRM WITH THE ACCOUNTANT before the API sync ships:
+ * tangible product (foam) and its minimum-order shortfall are marked taxable;
+ * design/travel/install services are not. Sales-tax treatment of services and
+ * delivery varies by state. Customer-level exemptions (schools, gov) are NOT
+ * handled here — they live on the QBO customer record and override per buyer.
+ */
+const TAXABLE_BY_KIND: Record<AdminQuoteLine["kind"], boolean> = {
+  measurement_design: false,
+  product: true,
+  upgrade: true,
+  delivery_install: false,
+  min_order_adjustment: true,
 };
 
 function num(v: unknown): number | null {
@@ -109,6 +138,7 @@ export function toQuickBooksRows(quote: AdminQuote): QbRow[] {
         qty,
         rate_cents: rate,
         amount_cents: l.amount_cents,
+        taxable: TAXABLE_BY_KIND.product,
       };
     }
     return {
@@ -117,22 +147,28 @@ export function toQuickBooksRows(quote: AdminQuote): QbRow[] {
       qty: 1,
       rate_cents: l.amount_cents,
       amount_cents: l.amount_cents,
+      taxable: TAXABLE_BY_KIND[l.kind] ?? false,
     };
   });
 }
 
 /**
- * Tab-separated block for pasting into a spreadsheet or a QuickBooks estimate.
- * Header row + one row per line + a Total row. Rate/Amount are plain decimals
- * (no "$") so they land cleanly in numeric cells.
+ * Tab-separated keying reference for a QuickBooks estimate. (QBO's estimate
+ * grid does not accept a pasted TSV block — this is read side-by-side while
+ * keying, or pasted into a spreadsheet.) Header row + one row per line + a
+ * Total row to reconcile against QBO's total after entry. Rate/Amount are
+ * plain decimals (no "$") so they land cleanly in numeric cells; Tax is the
+ * QBO line Tax checkbox (Y/N).
  */
 export function toQuickBooksTsv(quote: AdminQuote): string {
   const rows = toQuickBooksRows(quote);
-  const header = ["Product/Service", "Description", "Qty", "Rate", "Amount"].join("\t");
+  const header = ["Product/Service", "Description", "Qty", "Rate", "Amount", "Tax"].join("\t");
   const body = rows.map((r) =>
-    [r.item, r.description, String(r.qty), dollars(r.rate_cents), dollars(r.amount_cents)].join("\t"),
+    [r.item, r.description, String(r.qty), dollars(r.rate_cents), dollars(r.amount_cents), r.taxable ? "Y" : "N"].join(
+      "\t",
+    ),
   );
   const total = rows.reduce((s, r) => s + r.amount_cents, 0);
-  body.push(["", "Total", "", "", dollars(total)].join("\t"));
+  body.push(["", "Total", "", "", dollars(total), ""].join("\t"));
   return [header, ...body].join("\n");
 }

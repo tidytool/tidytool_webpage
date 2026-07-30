@@ -3,18 +3,20 @@
 /**
  * Customer-facing breakdown on the admin order page — the QuickBooks-ready view
  * of a quote. Renders ONLY the customer lines (no cost/margin) and a
- * "Copy for QuickBooks" button that puts a tab-separated block on the clipboard
- * for pasting into a spreadsheet or a QB estimate. Projection logic lives in
+ * "Copy for QuickBooks" button that puts a tab-separated keying reference on
+ * the clipboard (QBO's estimate grid can't accept a pasted block — key the
+ * lines in and reconcile against the Total row). Projection logic lives in
  * @/lib/pricing/quickbooks (pure + tested); this component is just the surface.
  */
 import { useState } from "react";
-import { formatCents, type AdminQuote } from "@/lib/types";
+import { formatCents, formatQuoteNumber, type AdminQuote } from "@/lib/types";
 import { toQuickBooksRows, toQuickBooksTsv } from "@/lib/pricing/quickbooks";
 
 export function CustomerBreakdown({ quote }: { quote: AdminQuote }) {
   const [copied, setCopied] = useState(false);
   const rows = toQuickBooksRows(quote);
   const total = rows.reduce((s, r) => s + r.amount_cents, 0);
+  const quoteNo = formatQuoteNumber(quote.quote_number);
 
   async function copy() {
     try {
@@ -30,6 +32,11 @@ export function CustomerBreakdown({ quote }: { quote: AdminQuote }) {
     <details className="reveal" style={{ marginTop: "0.6rem" }}>
       <summary>Customer breakdown (QuickBooks-ready)</summary>
       <div style={{ marginTop: "0.5rem" }}>
+        {quoteNo ? (
+          <p className="muted" style={{ margin: "0 0 0.5rem", fontSize: "0.85rem" }}>
+            QuickBooks Estimate no. (DocNumber): <strong className="num">{quoteNo}</strong>
+          </p>
+        ) : null}
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--c-muted, #667)" }}>
@@ -37,7 +44,8 @@ export function CustomerBreakdown({ quote }: { quote: AdminQuote }) {
               <th style={{ padding: "0.3rem 0.5rem", fontWeight: 600 }}>Description</th>
               <th style={{ padding: "0.3rem 0.5rem", fontWeight: 600, textAlign: "right" }}>Qty</th>
               <th style={{ padding: "0.3rem 0.5rem", fontWeight: 600, textAlign: "right" }}>Rate</th>
-              <th style={{ padding: "0.3rem 0 0.3rem 0.5rem", fontWeight: 600, textAlign: "right" }}>Amount</th>
+              <th style={{ padding: "0.3rem 0.5rem", fontWeight: 600, textAlign: "right" }}>Amount</th>
+              <th style={{ padding: "0.3rem 0 0.3rem 0.5rem", fontWeight: 600, textAlign: "center" }}>Tax</th>
             </tr>
           </thead>
           <tbody>
@@ -47,16 +55,18 @@ export function CustomerBreakdown({ quote }: { quote: AdminQuote }) {
                 <td style={{ padding: "0.4rem 0.5rem" }} className="muted">{r.description}</td>
                 <td className="num" style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{r.qty}</td>
                 <td className="num" style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{formatCents(r.rate_cents)}</td>
-                <td className="num" style={{ padding: "0.4rem 0 0.4rem 0.5rem", textAlign: "right" }}>{formatCents(r.amount_cents)}</td>
+                <td className="num" style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>{formatCents(r.amount_cents)}</td>
+                <td style={{ padding: "0.4rem 0 0.4rem 0.5rem", textAlign: "center" }}>{r.taxable ? "Y" : "N"}</td>
               </tr>
             ))}
             <tr style={{ borderTop: "2px solid var(--c-border)" }}>
               <td colSpan={4} style={{ padding: "0.4rem 0.5rem 0.4rem 0", textAlign: "right" }}>
                 <strong>Total</strong>
               </td>
-              <td className="num" style={{ padding: "0.4rem 0 0.4rem 0.5rem", textAlign: "right" }}>
+              <td className="num" style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
                 <strong>{formatCents(total)}</strong>
               </td>
+              <td />
             </tr>
           </tbody>
         </table>
@@ -66,7 +76,8 @@ export function CustomerBreakdown({ quote }: { quote: AdminQuote }) {
             {copied ? "Copied ✓" : "Copy for QuickBooks"}
           </button>
           <span className="muted" style={{ fontSize: "0.83rem" }}>
-            Tab-separated — paste into a spreadsheet or a QuickBooks estimate. Tax is applied in QuickBooks.
+            Tab-separated keying reference{quoteNo ? ` — enter ${quoteNo} as the estimate no.` : ""}. Customer tax
+            exemptions are applied in QuickBooks.
           </span>
         </div>
       </div>
