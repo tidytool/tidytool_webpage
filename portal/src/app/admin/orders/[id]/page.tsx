@@ -7,7 +7,8 @@ import {
 } from "@/lib/types";
 import { QuotesSection } from "@/components/QuotesSection";
 import { OrderContents } from "@/components/OrderContents";
-import { GenerateQuoteModal } from "@/components/GenerateQuoteModal";
+import { GenerateQuoteModal, type RateDefaults } from "@/components/GenerateQuoteModal";
+import { DEFAULT_PRICING_CONFIG, parsePricingConfig } from "@/lib/pricing/config";
 import { EditOrderModal } from "@/components/EditOrderModal";
 
 export const dynamic = "force-dynamic";
@@ -22,10 +23,11 @@ export default async function AdminOrderDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
-  const [detailRes, custRes, quotesRes] = await Promise.all([
+  const [detailRes, custRes, quotesRes, configRes] = await Promise.all([
     supabase.rpc("get_admin_order_detail", { p_order_id: id }),
     supabase.rpc("get_admin_customers"),
     supabase.rpc("get_quotes_for_order", { p_order_id: id }),
+    supabase.from("pricing_config").select("config").eq("active", true).single(),
   ]);
 
   if (detailRes.error) {
@@ -51,6 +53,36 @@ export default async function AdminOrderDetailPage({
   const latestQuote = quotes.length
     ? quotes.reduce((a, b) => (new Date(a.created_at) >= new Date(b.created_at) ? a : b))
     : null;
+
+  // Quote-modal rate knobs default from the ACTIVE rate card (fall back to the
+  // code default if the row is missing/unreadable so the modal always opens).
+  let activeConfig = DEFAULT_PRICING_CONFIG;
+  try {
+    if (!configRes.error && configRes.data?.config) activeConfig = parsePricingConfig(configRes.data.config);
+  } catch {
+    /* keep code default */
+  }
+  const dollars = (cents: number | null | undefined, fallback: number): string =>
+    ((cents ?? fallback) / 100).toFixed(2);
+  const tierRate = (tier: "essential" | "professional" | "premium"): string =>
+    dollars(activeConfig.product.tier_rates_cents_per_sqft?.[tier], activeConfig.product.rate_cents_per_sqft);
+  const rateDefaults: RateDefaults = {
+    essential: tierRate("essential"),
+    professional: tierRate("professional"),
+    premium: tierRate("premium"),
+    design_base: dollars(activeConfig.services.measurement_design.base_cents, 0),
+    travel_per_mile: dollars(activeConfig.services.measurement_design.travel_cents_per_mile, 0),
+    ship_base: dollars(
+      activeConfig.services.delivery_install.shipping_base_cents,
+      DEFAULT_PRICING_CONFIG.services.delivery_install.shipping_base_cents ?? 0,
+    ),
+    ship_per_sqft: dollars(
+      activeConfig.services.delivery_install.shipping_cents_per_sqft,
+      DEFAULT_PRICING_CONFIG.services.delivery_install.shipping_cents_per_sqft ?? 0,
+    ),
+    drawer_min: dollars(activeConfig.minimums.per_drawer_cents, 0),
+    order_min: dollars(activeConfig.minimums.per_order_cents, 0),
+  };
 
   return (
     <main className="wrap wrap--wide">
@@ -95,6 +127,7 @@ export default async function AdminOrderDetailPage({
             physicalCount={physicalTotal}
             defaultMiles={o.round_trip_miles}
             hasSite={!!o.site_address}
+            rates={rateDefaults}
           />
           <EditOrderModal
             order={{

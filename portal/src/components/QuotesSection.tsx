@@ -103,6 +103,11 @@ export function QuotesSection({
                 </span>
               ) : null}
               <strong>{formatCents(q.total_cents)}</strong>
+              {q.inputs?.config_overrides && Object.keys(q.inputs.config_overrides).length > 0 ? (
+                <span className="badge badge--warn" title="Priced with per-quote rate overrides, not the standard rate card">
+                  Custom rates
+                </span>
+              ) : null}
               <span className="chip">
                 Status <strong>{STATUS_LABEL[q.status] ?? q.status}</strong>
               </span>

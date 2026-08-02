@@ -11,8 +11,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { computeQuote, type QuoteInputs } from "@/lib/pricing/engine";
-import { parsePricingConfig } from "@/lib/pricing/config";
+import { computeQuote, type ComputedQuote, type QuoteInputs } from "@/lib/pricing/engine";
+import {
+  applyConfigOverrides,
+  parsePricingConfig,
+  sanitizeOverrides,
+  TIERS,
+  type PricingConfig,
+  type PricingOverrides,
+} from "@/lib/pricing/config";
 
 function num(formData: FormData, key: string): number | null {
   const v = formData.get(key);
@@ -21,14 +28,55 @@ function num(formData: FormData, key: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** Dollar form field → integer cents (null when blank/invalid). */
+function cents(formData: FormData, key: string): number | null {
+  const n = num(formData, key);
+  return n == null ? null : Math.round(n * 100);
+}
+
 /**
- * Core pricing routine shared by the (legacy) redirect-style action and the
- * new return-style action the Generate-quote modal uses. Returns a discriminated
- * result instead of throwing/redirecting so either caller can shape the outcome.
+ * Build the per-quote overrides by DIFFING the submitted rate knobs against the
+ * active config: a knob left at its default produces no override, so a normal
+ * quote records config_overrides = {} and never reads as custom-priced.
  */
-async function priceAndSaveQuote(
-  formData: FormData,
-): Promise<{ ok: true; orderId: string } | { ok: false; error: string }> {
+function overridesFrom(formData: FormData, config: PricingConfig): PricingOverrides {
+  const raw: Record<string, unknown> = {};
+  const tierRates: Record<string, number> = {};
+  for (const tier of TIERS) {
+    const v = cents(formData, `rate_${tier}`);
+    const current = config.product.tier_rates_cents_per_sqft?.[tier] ?? config.product.rate_cents_per_sqft;
+    if (v != null && v !== current) tierRates[tier] = v;
+  }
+  if (Object.keys(tierRates).length > 0) raw.tier_rates_cents_per_sqft = tierRates;
+
+  const knob = (field: string, key: keyof PricingOverrides, current: number | null | undefined) => {
+    const v = cents(formData, field);
+    if (v != null && v !== (current ?? null)) raw[key] = v;
+  };
+  knob("design_base", "measurement_base_cents", config.services.measurement_design.base_cents);
+  knob("travel_per_mile", "measurement_travel_cents_per_mile", config.services.measurement_design.travel_cents_per_mile);
+  knob("ship_base", "shipping_base_cents", config.services.delivery_install.shipping_base_cents);
+  knob("ship_per_sqft", "shipping_cents_per_sqft", config.services.delivery_install.shipping_cents_per_sqft);
+  knob("drawer_min", "per_drawer_min_cents", config.minimums.per_drawer_cents);
+  knob("order_min", "per_order_min_cents", config.minimums.per_order_cents);
+  return sanitizeOverrides(raw);
+}
+
+type PricedQuote = {
+  ok: true;
+  orderId: string;
+  configId: string;
+  inputs: QuoteInputs;
+  overrides: PricingOverrides;
+  quote: ComputedQuote;
+};
+
+/**
+ * Shared pricing core: load config + drawers, diff the rate knobs into
+ * overrides, and compute — WITHOUT saving. Used by both the Preview action and
+ * the save path, so what you preview is exactly what saves.
+ */
+async function priceQuote(formData: FormData): Promise<PricedQuote | { ok: false; error: string }> {
   const orderId = String(formData.get("order_id") ?? "");
   if (!orderId) return { ok: false, error: "Missing order id." };
 
@@ -62,6 +110,10 @@ async function priceAndSaveQuote(
     return { ok: false, error: `Active pricing config is invalid: ${(e as Error).message}` };
   }
 
+  // 1b. Per-quote rate overrides — knobs left at their defaults diff to {}.
+  const overrides = overridesFrom(formData, config);
+  const effectiveConfig = Object.keys(overrides).length > 0 ? applyConfigOverrides(config, overrides) : config;
+
   // 2. The order's drawers (RLS: staff drawer SELECT policy).
   // select("*") on purpose: naming `tier` explicitly would make this action
   // error if the code deploys before migration 20260730120000 adds the column.
@@ -94,21 +146,34 @@ async function priceAndSaveQuote(
     install_hours: installHours,
     ...(trips != null && trips > 0 ? { trips } : {}),
   };
-  const quote = computeQuote(drawerInputs, inputs, config);
+  const quote = computeQuote(drawerInputs, inputs, effectiveConfig);
   if (quote.lines.filter((l) => l.kind === "product").length === 0) {
     const reasons = quote.unpriced_drawers.map((d) => `${d.nickname ?? d.id.slice(0, 8)}: ${d.reason}`).join("; ");
     return { ok: false, error: `No drawer could be priced — ${reasons}` };
   }
 
-  // 4. Persist through the integrity-checked RPC.
+  return { ok: true, orderId, configId: configRow.id, inputs, overrides, quote };
+}
+
+/** Price + persist through the integrity-checked RPC. */
+async function priceAndSaveQuote(
+  formData: FormData,
+): Promise<{ ok: true; orderId: string } | { ok: false; error: string }> {
+  const priced = await priceQuote(formData);
+  if (!priced.ok) return priced;
+  const { orderId, configId, inputs, overrides, quote } = priced;
+
+  const supabase = await createClient();
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const { error: saveError } = await supabase.rpc("save_quote", {
     p_order_id: orderId,
-    p_config_id: configRow.id,
+    p_config_id: configId,
     p_quote: {
       subtotal_cents: quote.subtotal_cents,
       total_cents: quote.total_cents,
-      inputs,
+      // Overrides ride inside the inputs jsonb so a custom-priced quote is
+      // auditable and reproducible without any schema change.
+      inputs: Object.keys(overrides).length > 0 ? { ...inputs, config_overrides: overrides } : inputs,
       estimated_cost_cents: quote.estimated_cost_cents,
       cost_breakdown: quote.cost_breakdown,
       gross_profit_cents: quote.gross_profit_cents,
@@ -123,6 +188,61 @@ async function priceAndSaveQuote(
   if (saveError) return { ok: false, error: saveError.message };
 
   return { ok: true, orderId };
+}
+
+/** Serializable preview line for the modal. */
+export type QuotePreviewLine = {
+  description: string;
+  qty: number | null;
+  unit_price_cents: number | null;
+  amount_cents: number;
+};
+
+/** Shape returned to the modal's Preview button via useActionState. */
+export type QuotePreviewState = {
+  ok?: boolean;
+  error?: string;
+  preview?: {
+    lines: QuotePreviewLine[];
+    total_cents: number;
+    estimated_cost_cents: number;
+    gross_margin: number | null;
+    below_target: boolean;
+    warnings: string[];
+    unpriced: string[];
+    override_count: number;
+  };
+};
+
+/**
+ * Preview action: full pricing pass, NOTHING saved. What renders here is
+ * byte-identical to what "Generate quote" would persist with the same form.
+ */
+export async function quotePreviewAction(
+  _prev: QuotePreviewState,
+  formData: FormData,
+): Promise<QuotePreviewState> {
+  const priced = await priceQuote(formData);
+  if (!priced.ok) return { error: priced.error };
+  const { quote, overrides } = priced;
+  return {
+    ok: true,
+    preview: {
+      lines: quote.lines.map((l) => ({
+        description: l.description,
+        qty: l.qty,
+        unit_price_cents: l.unit_price_cents,
+        amount_cents: l.amount_cents,
+      })),
+      total_cents: quote.total_cents,
+      estimated_cost_cents: quote.estimated_cost_cents,
+      gross_margin: quote.gross_margin,
+      below_target: quote.below_target,
+      warnings: quote.warnings,
+      unpriced: quote.unpriced_drawers.map((d) => `${d.nickname ?? d.id.slice(0, 8)}: ${d.reason}`),
+      override_count: Object.keys(overrides).length,
+    },
+  };
 }
 
 /** Legacy redirect-style action (kept for compatibility; UI now uses quoteFormAction). */
