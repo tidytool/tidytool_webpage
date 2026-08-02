@@ -55,20 +55,23 @@ test("product line: Qty = copies, Rate = per-copy, Qty×Rate = Amount", () => {
   assert.equal(/×\s*\d+\s*$/.test(socket.description), false); // no trailing "× N" — copies live in Qty
 });
 
-test("floored drawer reads 'order minimum'", () => {
+test("small drawer prices purely by sqft (no floor since v4)", () => {
   const tray = toQuickBooksRows(asAdminQuote(SAMPLE)).find((r) => r.description.startsWith("Small tray"))!;
-  assert.match(tray.description, /order minimum/);
-  assert.equal(tray.rate_cents, 4000);
+  assert.match(tray.description, /1(\.00)? sqft @ \$20\.00\/sqft/);
+  assert.equal(tray.description.includes("order minimum"), false);
+  assert.equal(tray.rate_cents, 2000);
 });
 
-test("service lines are real priced rows (not 'Included')", () => {
+test("service lines: scan travel + shipping estimate (v4)", () => {
   const rows = toQuickBooksRows(asAdminQuote(SAMPLE));
   const m = rows.find((r) => r.item === "Scanning & Design")!;
   const d = rows.find((r) => r.item === "Delivery & Installation")!;
-  assert.equal(m.amount_cents, 10000 + 120 * 125); // $100 + travel
-  assert.match(m.description, /design/);
-  assert.equal(d.amount_cents, 120 * 125);
-  assert.match(d.description, /travel/);
+  assert.equal(m.amount_cents, 120 * 125); // travel only — no design base
+  assert.match(m.description, /travel/);
+  assert.equal(m.description.includes("design"), false); // $0 base never rendered
+  // socket 3.0199 sqft × 2 copies + tray 1 sqft = 7.04 sqft → $15 + $1.50/sqft
+  assert.equal(d.amount_cents, 1500 + 1056);
+  assert.match(d.description, /Estimated shipping — 7\.04 sqft foam/);
 });
 
 test("TSV: header + row per line + Total; no cost/margin leaks", () => {

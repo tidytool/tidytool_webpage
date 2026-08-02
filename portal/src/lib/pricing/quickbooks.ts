@@ -109,16 +109,23 @@ function descriptionFor(line: AdminQuoteLine): string {
       const travel = num(line.meta?.travel_cents);
       const miles = num(line.meta?.round_trip_miles);
       const parts: string[] = [];
-      if (base != null) parts.push(`$${dollars(base)} design`);
+      if (base != null && base > 0) parts.push(`$${dollars(base)} design`);
       if (travel != null && travel > 0) parts.push(`${miles ?? 0} mi round-trip travel ($${dollars(travel)})`);
       return parts.join(" + ") || "On-site measurement & design";
     }
     case "delivery_install": {
+      // v4 shipping meta first; legacy travel meta as fallback.
+      const shipSqft = num(line.meta?.physical_area_sqft);
+      const shipBase = num(line.meta?.shipping_base_cents);
+      const shipRate = num(line.meta?.shipping_cents_per_sqft);
+      if (shipBase != null && shipRate != null) {
+        return shipSqft != null && shipSqft > 0
+          ? `Estimated shipping — ${shipSqft} sqft foam ($${dollars(shipBase)} + $${dollars(shipRate)}/sqft)`
+          : `Estimated shipping ($${dollars(shipBase)} base)`;
+      }
       const miles = num(line.meta?.round_trip_miles);
       const travel = num(line.meta?.travel_cents);
-      return travel != null && travel > 0
-        ? `${miles ?? 0} mi round-trip travel`
-        : "Delivery, installation & test fit";
+      return travel != null && travel > 0 ? `${miles ?? 0} mi round-trip travel` : "Delivery & installation";
     }
     case "upgrade":
       return line.description.replace(/^Optional Upgrade\s*[—-]\s*/, "");

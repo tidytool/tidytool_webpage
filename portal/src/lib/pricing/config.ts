@@ -76,15 +76,26 @@ export type PricingConfig = {
     per_order_cents: number;
   };
   /**
-   * Customer-facing service lines, now travel-priced (Sam, 2026-07-24).
-   * $20/sqft already covers on-site labor (scanning + install/test-fit), so these
-   * lines are a one-time design base + travel, billed on BOTH visits (scan + delivery).
-   * measurement_design line = base_cents + round_trip_miles × travel_cents_per_mile.
-   * delivery_install  line  =              round_trip_miles × travel_cents_per_mile.
+   * Customer-facing service lines (reworked Sam, 2026-07-30):
+   * - measurement_design = base_cents + round_trip_miles × travel_cents_per_mile.
+   *   Since v4 the design base is $0 — the line bills scan-visit travel only.
+   * - delivery_install: SHIPPED, not driven (v4). Line = shipping_base_cents +
+   *   shipping_cents_per_sqft × physical foam sqft (design sqft × copies).
+   *   travel_cents_per_mile is retained as a legacy field: configs keep it (0 in
+   *   v4) so pre-v4 engine builds still validate, and the engine falls back to
+   *   the travel model when the shipping fields are absent (v2/v3 configs).
    */
   services: {
     measurement_design: { label: string; base_cents: number; travel_cents_per_mile: number };
-    delivery_install: { label: string; travel_cents_per_mile: number };
+    delivery_install: {
+      label: string;
+      /** Legacy travel model (v2/v3). Used only when shipping fields are absent. */
+      travel_cents_per_mile: number;
+      /** v4+: flat shipping base, cents. */
+      shipping_base_cents?: number;
+      /** v4+: cents per sqft of PHYSICAL foam shipped (design sqft × copies). */
+      shipping_cents_per_sqft?: number;
+    };
   };
   /**
    * Optional upgrades (engraving, rush, shipping…). Empty today; entries added
@@ -114,11 +125,11 @@ export type PricingConfig = {
 };
 
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
-  version: 3,
+  version: 4,
   currency: "USD",
   product: {
-    // Rates cover foam material + cutting + on-site labor (scanning AND
-    // install/test-fit). No separate labor lines — see services below.
+    // Rates cover foam material + cutting + scan labor. No separate labor
+    // lines — see services below.
     rate_cents_per_sqft: 2000, // fallback = essential rate ($20.00/sqft)
     tier_rates_cents_per_sqft: {
       essential: 2000, // $20.00 / sqft — dual-color cut
@@ -130,18 +141,20 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     default_thickness_multiplier: 1.0,
   },
   minimums: {
-    per_drawer_cents: 4000, // $40 / physical drawer
-    per_order_cents: 25000, // $250 / order
+    per_drawer_cents: 0, // v4: no per-drawer floor — drawers price purely by sqft × tier rate
+    per_order_cents: 25000, // $250 / order (kept as the small-job backstop)
   },
   services: {
     measurement_design: {
       label: "On-site Measurement & Design",
-      base_cents: 10000, // $100 one-time design/setup, charged once per quote
+      base_cents: 0, // v4: design base dropped — the line is scan-visit travel only
       travel_cents_per_mile: 125, // $1.25 / round-trip mile (scan visit)
     },
     delivery_install: {
-      label: "Delivery, Installation & Test Fit",
-      travel_cents_per_mile: 125, // $1.25 / round-trip mile (delivery visit)
+      label: "Delivery & Installation",
+      travel_cents_per_mile: 0, // legacy field, unused when shipping fields are set
+      shipping_base_cents: 1500, // $15 flat shipping/handling
+      shipping_cents_per_sqft: 150, // $1.50 per sqft of physical foam shipped
     },
   },
   upgrades: {},
@@ -149,9 +162,9 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     mileage_cents_per_round_trip_mile: 70, // $0.70 / round-trip mile
     driving_labor_cents_per_hour: 2000, // $20 / hr
     scanning_labor_cents_per_hour: 2000, // $20 / hr
-    install_labor_cents_per_hour: 2000, // $20 / hr
+    install_labor_cents_per_hour: 2000, // $20 / hr (only counts if install hours entered)
     scanning_minutes_per_sqft: 5,
-    default_trips: 2, // one measure visit + one install visit
+    default_trips: 1, // v4: scan visit only — delivery ships instead of a second trip
   },
   margin: { target: 0.6 },
   rounding: { line: "cent", total: "cent" },
@@ -189,6 +202,15 @@ export function parsePricingConfig(raw: unknown): PricingConfig {
   }
   if (!di || !isCents(di.travel_cents_per_mile)) {
     throw new Error("pricing config: services.delivery_install needs integer travel_cents_per_mile");
+  }
+  // v4 shipping model: both fields or neither (a lone one is a config typo).
+  const hasShipBase = di.shipping_base_cents != null;
+  const hasShipSqft = di.shipping_cents_per_sqft != null;
+  if (hasShipBase !== hasShipSqft) {
+    throw new Error("pricing config: delivery_install shipping_base_cents and shipping_cents_per_sqft must be set together");
+  }
+  if (hasShipBase && (!isCents(di.shipping_base_cents) || !isCents(di.shipping_cents_per_sqft))) {
+    throw new Error("pricing config: delivery_install shipping fields must be integer cents");
   }
   if (!c.costs || !isCents(c.costs.mileage_cents_per_round_trip_mile)) {
     throw new Error("pricing config: costs missing");

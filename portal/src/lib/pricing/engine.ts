@@ -11,10 +11,11 @@
  * of the lines, so the customer's line column always reconciles to the total.
  *
  * Customer-facing lines, in presentation order:
- *   1. On-site Measurement & Design          (included, $0)
- *   2. Custom Foam Tool Organizer(s)         (one line per drawer)
+ *   1. On-site Measurement & Design          (scan-visit travel; design base if configured)
+ *   2. Custom Foam Tool Organizer(s)         (one line per drawer, tier-priced)
  *   3. Optional Upgrades                     (only when upgrades are selected)
- *   4. Delivery, Installation & Test Fit     (included, $0)
+ *   4. Delivery & Installation               (v4+: shipping estimate — base + per-sqft
+ *                                             of physical foam; legacy configs: travel)
  *   5. Minimum Order Adjustment              (only when the order minimum binds)
  *
  * The internal cost model (mileage, driving/scanning/install labor) is
@@ -182,12 +183,12 @@ export function computeQuote(
   const lines: QuoteLine[] = [];
   let position = 0;
 
-  // Travel is billed on BOTH visits (scan trip + delivery trip) at the config
-  // per-mile rate; miles < 0 is clamped, absurdly high miles are flagged below.
+  // Travel is billed on the SCAN visit at the config per-mile rate (delivery
+  // ships since v4); miles < 0 is clamped, absurdly high miles are flagged below.
   const miles = Math.max(0, inputs.round_trip_miles);
   if (miles > MILEAGE_SANITY_THRESHOLD) {
     warnings.push(
-      `round-trip miles = ${round2(miles)} — unusually high; confirm it isn't a typo (customer travel is billed twice at this distance)`,
+      `round-trip miles = ${round2(miles)} — unusually high; confirm it isn't a typo`,
     );
   }
   // Labor-hours sanity: a 20-hour drive for a 40-mile trip is a data-entry typo.
@@ -205,18 +206,20 @@ export function computeQuote(
     warnings.push(`install hours = ${round2(inputs.install_hours)} is unusually high — confirm it isn't a typo`);
   }
 
-  // ---- 1. On-site Measurement & Design (one-time design base + travel) ----
+  // ---- 1. On-site Measurement & Design (scan-visit travel; base if configured) ----
+  // v4 dropped the $100 design base (base_cents = 0) — the line is purely
+  // miles × rate. The base still renders for older configs that carry one.
   const svcMeasure = config.services.measurement_design;
   const measureTravel = roundCents(miles * svcMeasure.travel_cents_per_mile);
+  const measureParts: string[] = [];
+  if (svcMeasure.base_cents > 0) measureParts.push(`$${dollars(svcMeasure.base_cents)} design`);
+  if (miles > 0) {
+    measureParts.push(`${round2(miles)} mi round-trip @ $${dollars(svcMeasure.travel_cents_per_mile)}/mi`);
+  }
   lines.push({
     position: ++position,
     kind: "measurement_design",
-    description:
-      `${svcMeasure.label} ($${dollars(svcMeasure.base_cents)} design` +
-      (miles > 0
-        ? ` + ${round2(miles)} mi round-trip @ $${dollars(svcMeasure.travel_cents_per_mile)}/mi`
-        : "") +
-      `)`,
+    description: measureParts.length > 0 ? `${svcMeasure.label} (${measureParts.join(" + ")})` : svcMeasure.label,
     drawer_id: null,
     qty: null,
     unit: null,
@@ -236,6 +239,7 @@ export function computeQuote(
   // line. Scanning/design is charged ONCE (the measurement line), not per copy —
   // so totalAreaSqft (which drives internal scanning cost) is DESIGN area only.
   let totalAreaSqft = 0;
+  let totalPhysicalAreaSqft = 0; // design sqft × copies — what actually ships
   let totalPhysicalDrawers = 0;
   const priced: { drawer: QuoteDrawerInput; dims: NormalizedDrawerDims }[] = [];
   for (const drawer of drawers) {
@@ -269,6 +273,7 @@ export function computeQuote(
 
     const dimsText = `${fmtIn(dims.width_in)} × ${fmtIn(dims.length_in)}, ${fmtIn(thickness)} foam`;
     totalAreaSqft += dims.area_sqft;
+    totalPhysicalAreaSqft += dims.area_sqft * copies;
     totalPhysicalDrawers += copies;
     lines.push({
       position: ++position,
@@ -324,24 +329,54 @@ export function computeQuote(
     });
   }
 
-  // ---- 4. Delivery, Installation & Test Fit (travel to deliver) -----------
+  // ---- 4. Delivery & Installation ------------------------------------------
+  // v4: SHIPPED — expected shipping cost = flat base + per-sqft of the physical
+  // foam (design sqft × copies). Legacy configs without shipping fields keep
+  // the old travel model (miles × rate) so a new engine on a v2/v3 config
+  // still prices the way that config intended.
   const svcInstall = config.services.delivery_install;
-  const deliverTravel = roundCents(miles * svcInstall.travel_cents_per_mile);
-  lines.push({
-    position: ++position,
-    kind: "delivery_install",
-    description:
-      miles > 0
-        ? `${svcInstall.label} (${round2(miles)} mi round-trip @ $${dollars(svcInstall.travel_cents_per_mile)}/mi)`
-        : svcInstall.label,
-    drawer_id: null,
-    qty: null,
-    unit: null,
-    unit_price_cents: null,
-    amount_cents: deliverTravel,
-    included: false,
-    meta: { travel_cents: deliverTravel, round_trip_miles: miles },
-  });
+  if (svcInstall.shipping_base_cents != null && svcInstall.shipping_cents_per_sqft != null) {
+    const shipSqft = round2(totalPhysicalAreaSqft);
+    const shipping =
+      svcInstall.shipping_base_cents + roundCents(totalPhysicalAreaSqft * svcInstall.shipping_cents_per_sqft);
+    lines.push({
+      position: ++position,
+      kind: "delivery_install",
+      description:
+        shipSqft > 0
+          ? `${svcInstall.label} — estimated shipping (${shipSqft} sqft foam)`
+          : `${svcInstall.label} — estimated shipping`,
+      drawer_id: null,
+      qty: null,
+      unit: null,
+      unit_price_cents: null,
+      amount_cents: shipping,
+      included: false,
+      meta: {
+        shipping_base_cents: svcInstall.shipping_base_cents,
+        shipping_cents_per_sqft: svcInstall.shipping_cents_per_sqft,
+        physical_area_sqft: shipSqft,
+        shipping_cents: shipping,
+      },
+    });
+  } else {
+    const deliverTravel = roundCents(miles * svcInstall.travel_cents_per_mile);
+    lines.push({
+      position: ++position,
+      kind: "delivery_install",
+      description:
+        miles > 0
+          ? `${svcInstall.label} (${round2(miles)} mi round-trip @ $${dollars(svcInstall.travel_cents_per_mile)}/mi)`
+          : svcInstall.label,
+      drawer_id: null,
+      qty: null,
+      unit: null,
+      unit_price_cents: null,
+      amount_cents: deliverTravel,
+      included: false,
+      meta: { travel_cents: deliverTravel, round_trip_miles: miles },
+    });
+  }
 
   // ---- 5. Minimum Order Adjustment ----------------------------------------
   let subtotal = lines.reduce((sum, l) => sum + l.amount_cents, 0);
