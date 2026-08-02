@@ -123,11 +123,11 @@ export function GenerateQuoteModal({
                   </label>
                   <label className="ctrl">
                     <span>Install hours</span>
-                    <input name="install_hours" inputMode="decimal" required defaultValue="1" />
+                    <input name="install_hours" inputMode="decimal" required defaultValue="0" />
                   </label>
                   <label className="ctrl">
                     <span>Trips</span>
-                    <input name="trips" type="number" min="1" step="1" defaultValue="2" />
+                    <input name="trips" type="number" min="1" step="1" defaultValue="1" />
                   </label>
                 </div>
               </details>

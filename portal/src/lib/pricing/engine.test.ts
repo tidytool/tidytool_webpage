@@ -1,12 +1,13 @@
 /**
- * Quoting-engine unit tests (Stage 2: boxes/copies + travel-priced services).
+ * Quoting-engine unit tests (v4 pricing: tiers + shipped delivery).
  *
  * Run:  npm run test:pricing
  *
  * Dimension fixtures mirror REAL production `drawer.dimensions` shapes.
- * Pricing model under test: $20/sqft foam per PHYSICAL copy ($40 floor per copy);
- * On-site Measurement & Design = $100 base + round-trip miles × $1.25 (once);
- * Delivery = round-trip miles × $1.25; travel billed on BOTH lines.
+ * Pricing model under test (v4, Sam 2026-07-30): tier rate × sqft per PHYSICAL
+ * copy, NO per-drawer floor; On-site Measurement & Design = round-trip miles ×
+ * $1.25 (no design base); Delivery & Installation = estimated shipping
+ * ($15 + $1.50/sqft of physical foam); $250 order minimum retained.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,17 +18,19 @@ import { isNormalizeFailure, normalizeDrawerDimensions } from "./normalize";
 
 const cfg = DEFAULT_PRICING_CONFIG;
 
-// miles 30 → measurement travel 30×125=3750; measurement line = 10000+3750 = 13750; delivery = 3750
+// miles 30 → measurement = 30×125 = 3750 (no design base since v4).
+// Shipping for one legacy drawer copy: 1500 + round(2.4898 sqft × 150) = 1873.
 const INPUTS: QuoteInputs = { round_trip_miles: 30, drive_hours_per_trip: 0.75, install_hours: 1 };
-const MEASURE_30 = 13750;
-const DELIVER_30 = 3750;
+const MEASURE_30 = 3750;
+const SHIP_LEGACY_1 = 1873;
+const SHIP_EMPTY = 1500; // flat shipping base with zero foam sqft
 
 const legacyDrawer = (id: string, copies?: number): QuoteDrawerInput => ({
   id,
   nickname: `legacy-${id}`,
   dimensions: { length: 19.25, width: 18.625, thickness: 0.5, units: "in" },
   ...(copies != null ? { copies } : {}),
-}); // area 2.4898 sqft → per-copy $49.80
+}); // area 2.4898 sqft → per-copy $49.80 (no floor since v4)
 
 const scannedDrawer: QuoteDrawerInput = {
   id: "aaaaaaaa-0000-0000-0000-000000000001",
@@ -48,28 +51,38 @@ test("normalizer: legacy inches + feetDecimal + mm + thickness-object", () => {
   assert.ok(isNormalizeFailure(normalizeDrawerDimensions({ width: 19, length: 18, units: "ft" }))); // unit bug
 });
 
-// ---- service lines are now priced (base + travel) --------------------------
-test("services are travel-priced, not Included", () => {
+// ---- service lines: scan travel + shipped delivery (v4) ---------------------
+test("measurement is travel-only; delivery is a shipping estimate", () => {
   const q = computeQuote([legacyDrawer("d1")], INPUTS, cfg);
   const m = line(q, "measurement_design");
   const d = line(q, "delivery_install");
-  assert.equal(m.amount_cents, MEASURE_30); // 100 + 30×1.25 = 137.50
-  assert.equal(m.included, false);
-  assert.equal(d.amount_cents, DELIVER_30); // 30×1.25 = 37.50
+  assert.equal(m.amount_cents, MEASURE_30); // 30 × $1.25, no design base
+  assert.equal(m.meta.base_cents, 0);
+  assert.equal(m.description.includes("design"), false); // $0 base never rendered
+  assert.equal(d.amount_cents, SHIP_LEGACY_1); // $15 + 2.4898 sqft × $1.50
+  assert.equal(d.meta.shipping_base_cents, 1500);
+  assert.match(d.description, /estimated shipping/);
   assert.equal(d.included, false);
 });
 
-test("travel is billed on BOTH visits at $1.25/mi", () => {
+test("travel is billed ONLY on the scan visit; shipping ignores miles", () => {
   const q = computeQuote([legacyDrawer("d1")], { ...INPUTS, round_trip_miles: 80 }, cfg);
   assert.equal(line(q, "measurement_design").meta.travel_cents, 80 * 125);
-  assert.equal(line(q, "delivery_install").meta.travel_cents, 80 * 125);
-  assert.equal(line(q, "measurement_design").meta.base_cents, 10000);
+  assert.equal(line(q, "delivery_install").amount_cents, SHIP_LEGACY_1); // unchanged by miles
+  assert.equal(line(q, "delivery_install").meta.travel_cents, undefined);
 });
 
-test("zero miles → measurement is just the $100 base, delivery is $0", () => {
+test("shipping scales with PHYSICAL foam (copies), not design count", () => {
+  const one = computeQuote([legacyDrawer("d", 1)], INPUTS, cfg);
+  const four = computeQuote([legacyDrawer("d", 4)], INPUTS, cfg);
+  assert.equal(line(one, "delivery_install").amount_cents, 1873); // 1500 + round(2.4898×150)
+  assert.equal(line(four, "delivery_install").amount_cents, 2994); // 1500 + round(9.9592×150)
+});
+
+test("zero miles → measurement is $0 (local pickup); shipping unaffected", () => {
   const q = computeQuote([legacyDrawer("d1")], { ...INPUTS, round_trip_miles: 0 }, cfg);
-  assert.equal(line(q, "measurement_design").amount_cents, 10000);
-  assert.equal(line(q, "delivery_install").amount_cents, 0);
+  assert.equal(line(q, "measurement_design").amount_cents, 0);
+  assert.equal(line(q, "delivery_install").amount_cents, SHIP_LEGACY_1);
 });
 
 // ---- foam per physical copy -------------------------------------------------
@@ -89,18 +102,17 @@ test("foam is per-copy at $20/sqft; copies multiply, design does NOT", () => {
   assert.equal(line(one, "measurement_design").amount_cents, line(three, "measurement_design").amount_cents);
 });
 
-test("per-drawer $40 minimum floors EACH copy", () => {
+test("NO per-drawer floor (v4): a tiny drawer prices purely by sqft", () => {
   const small: QuoteDrawerInput = {
     id: "s",
     nickname: "small",
-    dimensions: { width: 12, length: 12, thickness: 0.5, units: "in" }, // 1 sqft → $20 → floored $40
+    dimensions: { width: 12, length: 12, thickness: 0.5, units: "in" }, // 1 sqft → $20/copy, no floor
     copies: 2,
   };
   const p = line(computeQuote([small], INPUTS, cfg), "product");
-  assert.equal(p.unit_price_cents, 4000); // per-copy floored
-  assert.equal(p.amount_cents, 8000); // × 2 copies
-  assert.equal(p.meta.drawer_minimum_applied, true);
-  assert.equal(p.meta.per_copy_before_minimum_cents, 2000);
+  assert.equal(p.unit_price_cents, 2000); // exactly sqft × rate
+  assert.equal(p.amount_cents, 4000); // × 2 copies
+  assert.equal(p.meta.drawer_minimum_applied, false);
 });
 
 // ---- totals / order minimum -------------------------------------------------
@@ -115,41 +127,42 @@ test("line order: measurement → products → delivery → [min adj]", () => {
 });
 
 test("order minimum still tops up a small, close job to $250", () => {
-  // measurement 137.50 + foam 49.80 + delivery 37.50 = 224.80 → +25.20 → 250.00
+  // measurement 37.50 + foam 49.80 + shipping 18.73 = 106.03 → +143.97 → 250.00
   const q = computeQuote([legacyDrawer("d1")], INPUTS, cfg);
   const adj = line(q, "min_order_adjustment");
-  assert.equal(adj.amount_cents, 25000 - 22480);
+  assert.equal(adj.amount_cents, 25000 - (MEASURE_30 + 4980 + SHIP_LEGACY_1));
   assert.equal(q.total_cents, 25000);
 });
 
 test("no order-minimum line once services + foam clear $250", () => {
-  const q = computeQuote([legacyDrawer("d1")], { ...INPUTS, round_trip_miles: 100 }, cfg);
-  // measurement 100+125=225.00, foam 49.80, delivery 125.00 → 399.80
+  const q = computeQuote([legacyDrawer("d1", 4)], { ...INPUTS, round_trip_miles: 100 }, cfg);
+  // measurement 125.00, foam 4×49.80=199.20, shipping 15+round(9.9592×1.50)=29.94 → 354.14
   assert.equal(q.lines.some((l) => l.kind === "min_order_adjustment"), false);
-  assert.equal(q.total_cents, 22500 + 4980 + 12500);
+  assert.equal(q.total_cents, 12500 + 4980 * 4 + 2994);
   assert.equal(q.total_cents, q.lines.reduce((s, l) => s + l.amount_cents, 0)); // reconciles
 });
 
 // ---- internal cost + margin (recovery) -------------------------------------
-test("far job that was negative now recovers (positive margin, still flagged)", () => {
+test("far job: v4 keeps positive margin (1 trip), still flagged under 60%", () => {
   const big: QuoteDrawerInput = {
     id: "big",
     nickname: "big",
     dimensions: { length: 25.5, width: 49, thickness: 0.5, units: "in" }, // 8.677 sqft → $173.54
   };
   const q = computeQuote([big], { round_trip_miles: 120, drive_hours_per_trip: 2, install_hours: 1 }, cfg);
-  // sell: measurement 100+150=250, foam 173.54, delivery 150 = 573.54
-  assert.equal(q.total_cents, 25000 + 17354 + 15000);
-  // internal cost: mileage 120×2×0.70=168, driving 2×2×20=80, scanning 8.677×5/60×20≈14.46, install 20
-  assert.ok(q.gross_profit_cents > 0); // was NEGATIVE before Stage 2
+  // sell: measurement 120×1.25=150, foam 173.54, shipping 15+round(8.6771×1.50)=28.02 = 351.56
+  assert.equal(q.total_cents, 15000 + 17354 + 2802);
+  // internal cost (1 trip default): mileage 120×0.70=84, driving 2×20=40, scanning ≈14.46, install 20 → 158.46
+  assert.equal(q.cost_breakdown.assumptions.trips, 1);
+  assert.ok(q.gross_profit_cents > 0);
   assert.ok(q.gross_margin! > 0.45 && q.gross_margin! < 0.6);
-  assert.equal(q.below_target, true); // still under 60% on a far, small-foam job — flagged, not repriced
+  assert.equal(q.below_target, true); // flagged, never repriced
 });
 
 test("mileage sanity guard warns on absurd distance (not blocked)", () => {
   const q = computeQuote([legacyDrawer("d1")], { ...INPUTS, round_trip_miles: 400 }, cfg);
   assert.ok(q.warnings.some((w) => w.includes("unusually high")));
-  assert.equal(line(q, "measurement_design").amount_cents, 10000 + 400 * 125); // still priced
+  assert.equal(line(q, "measurement_design").amount_cents, 400 * 125); // still priced
 });
 
 test("drive-hours guard catches the impossible-speed typo (20 hr / 40 mi)", () => {
@@ -223,7 +236,7 @@ test("tier rate composes with thickness multiplier; $40 floor applies per copy a
     "product",
   );
   assert.equal(p.unit_price_cents, Math.round(4 * 2400 * 1.5)); // 4 sqft × $36/sqft
-  // tiny premium drawer still floors at $40/copy:
+  // tiny premium drawer prices purely by sqft (no floor since v4):
   const tiny = line(
     computeQuote(
       [{ id: "t", nickname: "tiny", dimensions: { width: 6, length: 6, thickness: 0.5, units: "in" }, tier: "premium", copies: 2 }],
@@ -232,8 +245,8 @@ test("tier rate composes with thickness multiplier; $40 floor applies per copy a
     ),
     "product",
   );
-  assert.equal(tiny.unit_price_cents, 4000);
-  assert.equal(tiny.amount_cents, 8000);
+  assert.equal(tiny.unit_price_cents, 700); // 0.25 sqft × $28
+  assert.equal(tiny.amount_cents, 1400);
 });
 
 // ---- config-driven bits -----------------------------------------------------
@@ -268,7 +281,7 @@ test("empty drawer list: no product + no min-adjustment (service lines still emi
   const q = computeQuote([], INPUTS, cfg);
   assert.equal(q.lines.some((l) => l.kind === "product"), false);
   assert.equal(q.lines.some((l) => l.kind === "min_order_adjustment"), false);
-  assert.equal(q.total_cents, MEASURE_30 + DELIVER_30);
+  assert.equal(q.total_cents, MEASURE_30 + SHIP_EMPTY);
 });
 
 test("determinism: same inputs → identical quote", () => {
