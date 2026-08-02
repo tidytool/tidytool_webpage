@@ -16,6 +16,7 @@ import { DrawerBoxControls } from "@/components/DrawerBoxControls";
 import { createBoxAction } from "@/app/admin/box-actions";
 import { updateNicknameAction, markDeliveredAction } from "@/app/admin/actions";
 import { STATUS_LABELS, type ApprovalStatus } from "@/lib/types";
+import { dxfPublicUrl } from "@/lib/dxf";
 
 type Box = { id: string; label: string; quantity: number };
 type DrawerVM = {
@@ -26,6 +27,11 @@ type DrawerVM = {
   photo_url: string | null;
   design_preview_url: string | null;
   point_cloud_url: string | null;
+  /** CAD file for the cut; null until tidyCAD uploads one. */
+  dxf_url: string | null;
+  /** Status-backbone stage + label; missing until migration 20260802120000. */
+  stage?: string | null;
+  stage_label?: string | null;
   box_id: string | null;
   quantity: number;
   /** essential | professional | premium; missing (pre-migration) renders as essential. */
@@ -65,7 +71,12 @@ function DrawerRow({
 }) {
   const box = boxes.find((b) => b.id === drawer.box_id) ?? null;
   const physical = (box ? box.quantity : 1) * drawer.quantity;
-  const stage = drawer.status ? STATUS_LABELS[drawer.status] ?? drawer.status : "—";
+  // Prefer the status-backbone label ("Design complete"); fall back to the
+  // legacy enum label pre-migration.
+  const stage =
+    drawer.stage_label ??
+    (drawer.status ? STATUS_LABELS[drawer.status] ?? drawer.status : "—");
+  const dxfUrl = dxfPublicUrl(drawer.dxf_url);
 
   return (
     <div className="drawer-row">
@@ -97,11 +108,18 @@ function DrawerRow({
             Approval <strong>{drawer.customer_approval_status}</strong>
           </span>
         </div>
-        {drawer.design_preview_url ? (
-          <p style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
-            <a href={drawer.design_preview_url} target="_blank" rel="noopener noreferrer">
-              Design preview →
-            </a>
+        {drawer.design_preview_url || dxfUrl ? (
+          <p style={{ margin: "0.4rem 0 0", fontSize: "0.85rem", display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
+            {drawer.design_preview_url ? (
+              <a href={drawer.design_preview_url} target="_blank" rel="noopener noreferrer">
+                Design preview →
+              </a>
+            ) : null}
+            {dxfUrl ? (
+              <a href={dxfUrl} download>
+                DXF →
+              </a>
+            ) : null}
           </p>
         ) : null}
 

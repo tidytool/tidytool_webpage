@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import type { AdminOrderRow, AdminCustomer } from "@/lib/types";
 import { formatCents } from "@/lib/types";
 import { bulkAssignOrders, bulkDeleteOrders } from "@/app/admin/actions";
+import { DesignProgress } from "@/components/DesignProgress";
 
-const GRID = "1.4rem minmax(200px, 2fr) minmax(140px, 1.2fr) 5rem 6.5rem 7.5rem";
+const GRID = "1.4rem minmax(200px, 2fr) minmax(140px, 1.2fr) 5rem minmax(110px, 1fr) 6.5rem 7.5rem";
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -108,6 +109,7 @@ export function OrdersTable({
           <span>Customer / project</span>
           <span>Organization</span>
           <span className="tr-right">Drawers</span>
+          <span className="hide-sm">Design</span>
           <span className="tr-right">Total</span>
           <span className="tr-right">Created</span>
         </div>
@@ -142,6 +144,9 @@ export function OrdersTable({
               </span>
               <span className="sub hide-sm">{o.organization_name ?? "—"}</span>
               <span className="tr-right num hide-sm">{o.drawer_rows}</span>
+              <span className="hide-sm">
+                <DesignProgress compact total={o.drawer_rows} designed={o.drawers_designed} />
+              </span>
               <span className="tr-right num">{formatCents(o.total_price) ?? "—"}</span>
               <span className="tr-right sub num hide-sm">{fmtDate(o.created_at)}</span>
             </div>

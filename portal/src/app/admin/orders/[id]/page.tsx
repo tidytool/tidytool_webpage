@@ -4,7 +4,10 @@ import {
   type AdminCustomer,
   type AdminQuote,
   formatCents,
+  DESIGNED_SORT,
 } from "@/lib/types";
+import { dxfPublicUrl } from "@/lib/dxf";
+import { DesignProgress } from "@/components/DesignProgress";
 import { QuotesSection } from "@/components/QuotesSection";
 import { OrderContents } from "@/components/OrderContents";
 import { GenerateQuoteModal, type RateDefaults } from "@/components/GenerateQuoteModal";
@@ -50,6 +53,17 @@ export default async function AdminOrderDetailPage({
     return { id: d.id, copies: (box ? box.quantity : 1) * d.quantity };
   });
   const physicalTotal = currentDrawerCopies.reduce((s, d) => s + d.copies, 0);
+
+  // Design progress + DXF availability. stage_sort is absent until migration
+  // 20260802120000 is applied — undefined then, so the bar renders a dash
+  // rather than a false 0%.
+  const drawerTotal = detail.drawers.length;
+  const hasStageData = detail.drawers.some((d) => d.stage_sort != null);
+  const drawersDesigned =
+    drawerTotal > 0 && hasStageData
+      ? detail.drawers.filter((d) => (d.stage_sort ?? 0) >= DESIGNED_SORT).length
+      : undefined;
+  const dxfCount = detail.drawers.filter((d) => dxfPublicUrl(d.dxf_url)).length;
   const latestQuote = quotes.length
     ? quotes.reduce((a, b) => (new Date(a.created_at) >= new Date(b.created_at) ? a : b))
     : null;
@@ -118,9 +132,19 @@ export default async function AdminOrderDetailPage({
               ) : null}
             </span>
           </p>
+          {drawerTotal > 0 ? (
+            <p className="sub" style={{ margin: "0.5rem 0 0" }}>
+              <DesignProgress total={drawerTotal} designed={drawersDesigned} />
+            </p>
+          ) : null}
         </div>
 
         <div className="order-head__actions">
+          {dxfCount > 0 ? (
+            <a className="btn btn--ghost" href={`/admin/orders/${o.id}/dxf`}>
+              Download all DXFs ({dxfCount})
+            </a>
+          ) : null}
           <GenerateQuoteModal
             orderId={o.id}
             drawerCount={detail.drawers.length}
@@ -167,6 +191,9 @@ export default async function AdminOrderDetailPage({
           photo_url: d.photo_url,
           design_preview_url: d.design_preview_url,
           point_cloud_url: d.point_cloud_url,
+          dxf_url: d.dxf_url,
+          stage: d.stage,
+          stage_label: d.stage_label,
           box_id: d.box_id,
           tier: d.tier,
           quantity: d.quantity,

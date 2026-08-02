@@ -120,7 +120,19 @@ export type AdminOrderRow = {
   organization_id: string | null;
   organization_name: string | null;
   drawer_rows: number;
+  /**
+   * Drawer rows at stage "designed" or later (status_def sort_order >=
+   * DESIGNED_SORT). Optional/absent until migration 20260802120000 is
+   * applied — render a dash when undefined.
+   */
+  drawers_designed?: number;
 };
+
+/**
+ * status_def.sort_order of the "designed" stage — the design-complete
+ * threshold. Mirrors the `>= 40` in migration 20260802120000; keep in sync.
+ */
+export const DESIGNED_SORT = 40;
 
 /** A box inside get_admin_order_detail() — a container of drawers that duplicates as a unit. */
 export type AdminBox = {
@@ -151,6 +163,14 @@ export type AdminDetailDrawer = {
    * Optional/null until migration 20260730120000 is applied; treat missing as essential.
    */
   tier?: string | null;
+  /**
+   * Status-backbone lifecycle stage + its status_def label/sort_order.
+   * Optional/null until migration 20260802120000 is applied; stage_sort >=
+   * DESIGNED_SORT means design-complete.
+   */
+  stage?: string | null;
+  stage_label?: string | null;
+  stage_sort?: number | null;
   created_at: string;
 };
 
