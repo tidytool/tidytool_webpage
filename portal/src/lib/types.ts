@@ -299,6 +299,13 @@ export type AdminQuote = {
   qb_estimate_id?: string | null;
   /** When the QBO estimate was created/last synced. Set by the future qb-sync. */
   qb_synced_at?: string | null;
+  /**
+   * The inputs the quote was priced with (miles/hours/trips) plus, when the
+   * generator's rate knobs were changed, `config_overrides` — non-empty means
+   * this quote was custom-priced (render the "Custom rates" badge). Optional
+   * until migration 20260801000000 adds it to get_quotes_for_order.
+   */
+  inputs?: ({ config_overrides?: Record<string, unknown> } & Record<string, unknown>) | null;
   status: "draft" | "sent" | "accepted" | "declined" | "expired" | "void";
   /** Integer CENTS. */
   subtotal_cents: number;

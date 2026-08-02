@@ -171,6 +171,95 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
 };
 
 /**
+ * Per-quote overrides of the active rate card (Sam, 2026-08-01: EVERY knob is
+ * overridable in the quote generator, tier rates included). All values are
+ * integer cents. An override object is stored on the quote (inputs.config_overrides)
+ * so a custom-priced quote is auditable and reproducible; the margin flag stays
+ * the guardrail against underpricing.
+ */
+export type PricingOverrides = {
+  tier_rates_cents_per_sqft?: Partial<Record<Tier, number>>;
+  /** Measurement & Design flat base (v4 default 0). */
+  measurement_base_cents?: number;
+  /** Scan-visit travel rate, cents per round-trip mile. */
+  measurement_travel_cents_per_mile?: number;
+  /** Shipping flat base for Delivery & Installation. */
+  shipping_base_cents?: number;
+  /** Shipping per sqft of physical foam. */
+  shipping_cents_per_sqft?: number;
+  /** Per-drawer floor (v4 default 0 = none). */
+  per_drawer_min_cents?: number;
+  /** Order minimum backstop. */
+  per_order_min_cents?: number;
+};
+
+/**
+ * Merge validated overrides into a copy of the config. The input config is not
+ * mutated. Overriding either shipping field forces the shipping delivery model,
+ * filling the other field from the config (or 0) so the pair stays complete.
+ */
+export function applyConfigOverrides(config: PricingConfig, overrides: PricingOverrides): PricingConfig {
+  const c: PricingConfig = JSON.parse(JSON.stringify(config));
+  const o = overrides;
+  if (o.tier_rates_cents_per_sqft) {
+    c.product.tier_rates_cents_per_sqft = {
+      ...c.product.tier_rates_cents_per_sqft,
+      ...o.tier_rates_cents_per_sqft,
+    };
+    // Keep the legacy fallback aligned with the essential rate.
+    if (o.tier_rates_cents_per_sqft.essential != null) {
+      c.product.rate_cents_per_sqft = o.tier_rates_cents_per_sqft.essential;
+    }
+  }
+  if (o.measurement_base_cents != null) c.services.measurement_design.base_cents = o.measurement_base_cents;
+  if (o.measurement_travel_cents_per_mile != null) {
+    c.services.measurement_design.travel_cents_per_mile = o.measurement_travel_cents_per_mile;
+  }
+  if (o.shipping_base_cents != null || o.shipping_cents_per_sqft != null) {
+    c.services.delivery_install.shipping_base_cents =
+      o.shipping_base_cents ?? c.services.delivery_install.shipping_base_cents ?? 0;
+    c.services.delivery_install.shipping_cents_per_sqft =
+      o.shipping_cents_per_sqft ?? c.services.delivery_install.shipping_cents_per_sqft ?? 0;
+  }
+  if (o.per_drawer_min_cents != null) c.minimums.per_drawer_cents = o.per_drawer_min_cents;
+  if (o.per_order_min_cents != null) c.minimums.per_order_cents = o.per_order_min_cents;
+  return c;
+}
+
+/**
+ * Validate an untrusted overrides blob. Unknown keys are dropped; every value
+ * must be integer cents ≥ 0 (tier keys must be real tiers). Returns a clean
+ * object — {} means "no overrides".
+ */
+export function sanitizeOverrides(raw: unknown): PricingOverrides {
+  const out: PricingOverrides = {};
+  if (raw == null || typeof raw !== "object") return out;
+  const r = raw as Record<string, unknown>;
+  const cents = (v: unknown): number | null =>
+    typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+  if (r.tier_rates_cents_per_sqft != null && typeof r.tier_rates_cents_per_sqft === "object") {
+    const tiers: Partial<Record<Tier, number>> = {};
+    for (const [k, v] of Object.entries(r.tier_rates_cents_per_sqft as Record<string, unknown>)) {
+      const c = cents(v);
+      if (isTier(k) && c != null) tiers[k] = c;
+    }
+    if (Object.keys(tiers).length > 0) out.tier_rates_cents_per_sqft = tiers;
+  }
+  for (const key of [
+    "measurement_base_cents",
+    "measurement_travel_cents_per_mile",
+    "shipping_base_cents",
+    "shipping_cents_per_sqft",
+    "per_drawer_min_cents",
+    "per_order_min_cents",
+  ] as const) {
+    const c = cents(r[key]);
+    if (c != null) out[key] = c;
+  }
+  return out;
+}
+
+/**
  * Validate an untrusted config blob (e.g. fresh from the DB) well enough to
  * price with it. Returns a typed config or throws with a readable reason.
  */
