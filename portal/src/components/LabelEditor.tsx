@@ -535,8 +535,8 @@ export function LabelEditor({
 
         {showOverlay && !aligning ? (
           <p className="muted" style={{ fontSize: "0.82rem", margin: "0.7rem 0 0" }}>
-            This is the flat, top-down view from your scan — outlines sit where each pocket will be cut. Click a pocket
-            to jump to its entry.
+            Top-down view from your scan — outlines show where each pocket will be
+            cut. Select a pocket to jump to its label.
           </p>
         ) : null}
       </section>
@@ -557,9 +557,7 @@ export function LabelEditor({
         ) : null}
 
         <div className="field">
-          <label htmlFor="drawerName">
-            Drawer name <span className="muted" style={{ fontWeight: 400 }}>(rename it if you like)</span>
-          </label>
+          <label htmlFor="drawerName">Drawer name</label>
           <input
             id="drawerName"
             type="text"
@@ -571,6 +569,9 @@ export function LabelEditor({
               queueSave();
             }}
           />
+          <p className="muted" style={{ fontSize: "0.8rem", margin: "0.3rem 0 0" }}>
+            Shown on this drawer&apos;s storage page and QR tag.
+          </p>
         </div>
 
         {rows ? (
@@ -581,8 +582,8 @@ export function LabelEditor({
               </div>
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.35rem 0 0" }}>
                 {done === total
-                  ? `All ${total} pockets covered — ready to submit.`
-                  : `${done} of ${total} pockets named · ${total - done} to go`}
+                  ? `All ${total} labels complete — ready to submit.`
+                  : `${done} of ${total} labels complete`}
                 {canEdit ? (
                   <span style={{ float: "right" }}>
                     {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Draft saved ✓" : saveState === "error" ? "Save failed — retrying on next edit" : ""}
@@ -614,7 +615,7 @@ export function LabelEditor({
                       type="text"
                       value={r.text}
                       maxLength={MAX_TEXT}
-                      placeholder={r.na ? "No label" : "Label for this pocket"}
+                      placeholder={r.na ? "No label" : "Engraving text"}
                       disabled={!canEdit || r.na}
                       aria-label={`Label for pocket ${r.index}`}
                       onChange={(e) => updateRow(r.key, { text: e.target.value })}
@@ -627,7 +628,7 @@ export function LabelEditor({
                         aria-label={`No label for pocket ${r.index}`}
                         onChange={(e) => updateRow(r.key, { na: e.target.checked })}
                       />
-                      N/A
+                      No label
                     </label>
                   </li>
                 );
@@ -638,17 +639,17 @@ export function LabelEditor({
               <div style={{ marginTop: "1rem" }}>
                 {submitState === "done" ? (
                   <p className="badge badge--approved" style={{ display: "inline-block", marginBottom: "0.6rem" }}>
-                    Labels submitted{d.labels_submitted_by ? ` by ${d.labels_submitted_by}` : ""} — edits here update them
+                    Labels submitted{d.labels_submitted_by ? ` by ${d.labels_submitted_by}` : ""} — further edits update the submission
                   </p>
                 ) : null}
                 <div className="field">
-                  <label htmlFor="signName">Your name</label>
+                  <label htmlFor="signName">Submitted by</label>
                   <input
                     id="signName"
                     type="text"
                     autoComplete="name"
                     maxLength={200}
-                    placeholder="e.g. Jordan Smith"
+                    placeholder="Full name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -661,7 +662,16 @@ export function LabelEditor({
                   {submitState === "busy" ? "Sending…" : submitState === "done" ? "Update submitted labels" : "Submit labels"}
                 </button>
                 <p className="muted" style={{ fontSize: "0.8rem", margin: "0.6rem 0 0" }}>
-                  You can come back and edit these until we start cutting. Labels are engraved as typed.
+                  {!complete ? (
+                    <>
+                      <b className="num">
+                        {total - done} label{total - done === 1 ? "" : "s"} remaining
+                      </b>{" "}
+                      — enter text or mark No label.{" "}
+                    </>
+                  ) : null}
+                  Labels can be revised until production begins. Text is engraved
+                  exactly as entered.
                 </p>
               </div>
             ) : null}
