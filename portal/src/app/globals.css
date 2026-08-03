@@ -345,8 +345,12 @@ dialog.modal::backdrop { background: rgba(16, 24, 32, 0.45); }
 .modal__x:hover { background: var(--c-accent); color: #fff; }
 .modal__body { padding: 1.1rem 1.25rem 1.25rem; overflow: auto; }
 
-/* Order quick-view popup (OrderQuickView.tsx) — double-click a row in the
-   admin orders list. Large per-drawer photos + an on-demand 3D scan viewer. */
+/* Drawer quick-view popup (DrawerQuickView.tsx) — double-click a drawer row
+   on the admin order detail page. Large photo + an on-demand 3D scan viewer. */
+.drawer-row--peek { cursor: zoom-in; }
+.drawer-row--peek a, .drawer-row--peek button, .drawer-row--peek input,
+.drawer-row--peek select { cursor: auto; }
+.drawer-row--peek button, .drawer-row--peek input[type="checkbox"] { cursor: pointer; }
 .qv__drawer {
   padding: 0.9rem; background: var(--c-surface);
   border: 1px solid var(--c-border); border-radius: var(--radius-sm);
