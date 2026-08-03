@@ -134,6 +134,28 @@ export type AdminOrderRow = {
  */
 export const DESIGNED_SORT = 40;
 
+/**
+ * Row from get_my_label_status() — per-drawer tool-label state for the
+ * dashboard CTAs. Absent until migration 20260803120000 is applied.
+ */
+export type MyLabelStatus = {
+  drawer_id: string;
+  stage_sort: number | null;
+  has_dxf: boolean;
+  labels_submitted_at: string | null;
+  locked: boolean;
+};
+
+/** True when the dashboard should show "Name your tools" for this drawer. */
+export function needsLabels(s: MyLabelStatus): boolean {
+  return (
+    (s.stage_sort ?? 0) >= DESIGNED_SORT &&
+    s.has_dxf &&
+    !s.locked &&
+    s.labels_submitted_at === null
+  );
+}
+
 /** A box inside get_admin_order_detail() — a container of drawers that duplicates as a unit. */
 export type AdminBox = {
   id: string;

@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool labels — TidyTool prototype v2</title>
+<style>
+  :root{
+    --c-bg:#F7F8FA; --c-surface:#FFFFFF; --c-surface-2:#EFF2F5;
+    --c-text:#1E2A33; --c-text-dim:#4A5860; --c-border:#DDE3E8;
+    --c-accent:#E8312A; --c-ok:#1E8E3E;
+    --radius:12px; --shadow:0 1px 3px rgba(30,42,51,.08),0 4px 14px rgba(30,42,51,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--c-bg);color:var(--c-text);
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header.bar{background:var(--c-surface);border-bottom:1px solid var(--c-border);
+    display:flex;justify-content:space-between;align-items:center;padding:.7rem 1.1rem;gap:1rem}
+  .logo{font-weight:800;font-size:1.15rem;letter-spacing:-.02em;white-space:nowrap}
+  .logo b{color:var(--c-accent)}
+  .logo span.tag{font-weight:500;color:var(--c-text-dim);font-size:.85rem;margin-left:.5rem}
+  .who{color:var(--c-text-dim);font-size:.85rem;text-align:right}
+  .proto{background:#FFF7E6;border-bottom:1px solid #F3D9A4;color:#7a5b13;
+    font-size:.82rem;padding:.4rem 1.1rem;text-align:center}
+  .wrap{max-width:1120px;margin:0 auto;padding:1.2rem 1.1rem 4rem}
+  .eyebrow{letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;font-weight:700;
+    color:var(--c-accent);margin:0 0 .2rem}
+  h1{margin:.1rem 0 .3rem;font-size:1.65rem;letter-spacing:-.02em}
+  .muted{color:var(--c-text-dim)}
+  .card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:1rem}
+  .btn{display:inline-block;border:0;border-radius:10px;padding:.65rem 1.2rem;font:inherit;
+    font-weight:700;cursor:pointer;text-decoration:none;text-align:center}
+  .btn--primary{background:var(--c-accent);color:#fff}
+  .btn--primary:disabled{background:#E9AFAC;cursor:not-allowed}
+  .btn--ghost{background:transparent;border:1px solid var(--c-border);color:var(--c-text)}
+  .btn--block{display:block;width:100%}
+  .fine{font-size:.8rem;color:var(--c-text-dim);margin:.6rem 0 0}
+  .field{margin-bottom: .8rem}
+  .field label{display:block;font-size:.82rem;font-weight:700;margin-bottom:.25rem}
+  input[type=text],input[type=email],input[type=password]{width:100%;border:1px solid var(--c-border);
+    border-radius:8px;padding:.55rem .65rem;font:inherit;background:#fff;color:inherit}
+  input:focus{outline:2px solid var(--c-accent);outline-offset:0;border-color:transparent}
+
+  /* ---- flow stepper (prototype chrome) ---- */
+  .flow{display:flex;gap:.35rem;flex-wrap:wrap;margin:0 0 1.2rem;padding:.6rem;border:1px dashed var(--c-border);
+    border-radius:10px;background:var(--c-surface);align-items:center}
+  .flow .lbl{font-size:.72rem;font-weight:700;letter-spacing:.08em;color:var(--c-text-dim);margin-right:.3rem}
+  .fstep{border:1px solid var(--c-border);background:var(--c-surface-2);border-radius:999px;
+    padding:.25rem .8rem;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--c-text-dim)}
+  .fstep[aria-current="true"]{background:var(--c-text);border-color:var(--c-text);color:#fff}
+  .screen{display:none}
+  .screen.on{display:block}
+  .narrow{max-width:480px;margin:0 auto}
+
+  /* ---- email mock ---- */
+  .email{max-width:560px;margin:0 auto;padding:0;overflow:hidden}
+  .email .ehead{background:var(--c-surface-2);padding:.7rem 1rem;font-size:.85rem;border-bottom:1px solid var(--c-border)}
+  .email .ehead div{margin:.1rem 0}
+  .email .ebody{padding:1.4rem 1.6rem;text-align:center}
+  .email .ebody .elogo{font-weight:800;font-size:1.3rem;margin-bottom:.8rem}
+  .email .ebody .elogo b{color:var(--c-accent)}
+
+  /* ---- dashboard ---- */
+  .tracker{display:flex;gap:.15rem;align-items:center;flex-wrap:wrap;margin:.6rem 0 .2rem}
+  .tstep{display:flex;align-items:center;gap:.3rem;font-size:.72rem;color:var(--c-text-dim);font-weight:600}
+  .tdot{width:12px;height:12px;border-radius:50%;background:var(--c-surface-2);border:2px solid var(--c-border);flex:none}
+  .tstep.done .tdot{background:var(--c-ok);border-color:var(--c-ok)}
+  .tstep.cur .tdot{background:#fff;border-color:var(--c-accent);box-shadow:0 0 0 3px #F8C9C6}
+  .tstep.cur{color:var(--c-accent)}
+  .tbar{width:18px;height:2px;background:var(--c-border);flex:none}
+  .banner{display:flex;gap:.6rem;align-items:center;background:#FDEEED;border:1px solid #F3BDBA;
+    border-radius:10px;padding:.6rem .9rem;margin:.9rem 0;font-size:.92rem}
+  .banner b{color:var(--c-accent)}
+  .grid{display:grid;gap:1rem;margin-top:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+  .dcard h3{margin:0;font-size:1.1rem}
+  .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.7rem}
+  .chip{background:var(--c-surface-2);border-radius:999px;padding:.15rem .7rem;font-size:.78rem;color:var(--c-text-dim)}
+  .chip strong{color:var(--c-text)}
+  .badge{border-radius:999px;padding:.15rem .7rem;font-size:.75rem;font-weight:700}
+  .badge--todo{background:#FDEEED;color:var(--c-accent)}
+  .badge--ok{background:#E7F4EA;color:var(--c-ok)}
+  .badge--dim{background:var(--c-surface-2);color:var(--c-text-dim)}
+  .dcard .cta{margin-top:.9rem;display:flex;flex-direction:column;gap:.35rem}
+  .cta a{font-weight:700;text-decoration:none}
+  .cta a.go{color:var(--c-accent)}
+  .cta a.dim{color:var(--c-text-dim);font-weight:600}
+
+  /* ---- label screen ---- */
+  a.back{color:var(--c-text-dim);text-decoration:none;font-size:.9rem}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:1.1rem;margin-top:1.2rem;align-items:start}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  svg.board{width:100%;height:auto;display:block;border-radius:10px}
+  .hint{font-size:.82rem;color:var(--c-text-dim);margin:.6rem 0 0}
+  .pocket{cursor:pointer}
+  .pocket .shape{fill:url(#depth);stroke:var(--pc);stroke-width:3}
+  .pocket.na .shape{stroke:#9AA6AE;stroke-dasharray:6 4}
+  .pocket.hl .shape{stroke-width:6}
+  .pbadge circle{fill:#fff;stroke:var(--pc);stroke-width:2.5}
+  .pbadge text{font-size:13px;font-weight:800;fill:var(--c-text);text-anchor:middle;dominant-baseline:central}
+  .pocket.na .pbadge circle{stroke:#9AA6AE}
+  .progress{margin:1rem 0 .4rem}
+  .ptrack{height:8px;border-radius:99px;background:var(--c-surface-2);overflow:hidden}
+  .pfill{height:100%;width:0;background:var(--c-ok);border-radius:99px;transition:width .25s}
+  .pcount{font-size:.85rem;color:var(--c-text-dim);margin-top:.35rem}
+  ul.rows{list-style:none;margin:.8rem 0 0;padding:0;display:flex;flex-direction:column;gap:.45rem}
+  .row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.6rem;align-items:center;
+    border:1px solid var(--c-border);border-radius:10px;padding:.5rem .6rem;background:#fff;
+    transition:border-color .12s, box-shadow .12s}
+  .row.hl{border-color:var(--rc);box-shadow:0 0 0 2px color-mix(in srgb,var(--rc) 30%,transparent)}
+  .row.na{background:var(--c-surface-2)}
+  .row.na input[type=text]{background:transparent;border-style:dashed;color:var(--c-text-dim)}
+  .sw{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+    background:color-mix(in srgb,var(--rc) 22%,#fff);border:2px solid var(--rc);
+    font-size:.8rem;font-weight:800;flex:none;position:relative}
+  .row.na .sw{border-color:#9AA6AE;background:repeating-linear-gradient(45deg,#fff,#fff 3px,#e3e8ec 3px,#e3e8ec 6px)}
+  .sw .done{position:absolute;right:-6px;top:-7px;width:15px;height:15px;border-radius:50%;
+    background:var(--c-ok);color:#fff;font-size:10px;line-height:15px;text-align:center;display:none}
+  .row.ok .sw .done{display:block}
+  .nawrap{font-size:.78rem;color:var(--c-text-dim);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+  .nawrap input{accent-color:var(--c-text);margin:0}
+  .success{text-align:center}
+  .success .big{font-size:2.1rem}
+  .success ul{list-style:none;text-align:left;padding:0;margin:1rem 0 0;font-size:.9rem}
+  .success li{padding:.3rem 0;border-bottom:1px dashed var(--c-border);display:flex;gap:.5rem}
+  .success li .n{font-weight:800;color:var(--c-text-dim);width:1.6rem;flex:none}
+  .success li.na{color:var(--c-text-dim);text-decoration:line-through}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="logo">tidy<b>tool</b><span class="tag">Customer Portal</span></div>
+  <div class="who" id="whoami">not signed in</div>
+</header>
+<div class="proto"><b>Prototype v2</b> — sample data, nothing saved. Use the flow strip below to jump between steps of the new-customer journey.</div>
+
+<main class="wrap">
+
+  <nav class="flow" aria-label="Prototype flow">
+    <span class="lbl">FLOW</span>
+    <button class="fstep" data-s="email">1 · Invite email</button>
+    <button class="fstep" data-s="password">2 · Set password</button>
+    <button class="fstep" data-s="dashboard">3 · Dashboard</button>
+    <button class="fstep" data-s="labels">4 · Name your tools</button>
+    <button class="fstep" data-s="done">5 · Done</button>
+  </nav>
+
+  <!-- ============ 1 · INVITE EMAIL ============ -->
+  <section class="screen" id="s-email">
+    <div class="card email">
+      <div class="ehead">
+        <div><b>From:</b> TidyTool &lt;orders@thetidytool.com&gt;</div>
+        <div><b>To:</b> jeff@waddoupsmachine.com</div>
+        <div><b>Subject:</b> Your TidyTool designs are ready — set up portal access</div>
+      </div>
+      <div class="ebody">
+        <div class="elogo">tidy<b>tool</b></div>
+        <p style="max-width:40ch;margin:0 auto 1.2rem">Hi Jeff — the foam designs for <b>Frontier Mechanical Trainer</b>
+        are ready for your review. Set a password to sign in, approve your designs, and tell us what to
+        write on each tool label.</p>
+        <button class="btn btn--primary" data-go="password">Set my password</button>
+        <p class="fine">This link is unique to you and expires in 7 days.</p>
+      </div>
+    </div>
+    <p class="fine" style="text-align:center">Sent when Sam clicks <b>“Invite to portal”</b> on the admin Customers tab — or automatically when the first drawer of an order reaches “Design complete” (open decision).</p>
+  </section>
+
+  <!-- ============ 2 · SET PASSWORD ============ -->
+  <section class="screen" id="s-password">
+    <div class="narrow">
+      <p class="eyebrow">Customer portal</p>
+      <h1>Welcome, Jeff</h1>
+      <p class="muted">Choose a password for <b>jeff@waddoupsmachine.com</b>. You’ll use it to sign in from any device.</p>
+      <div class="card">
+        <div class="field"><label>New password</label><input type="password" value="●●●●●●●●●●"></div>
+        <div class="field"><label>Confirm password</label><input type="password" value="●●●●●●●●●●"></div>
+        <button class="btn btn--primary btn--block" data-go="dashboard">Save &amp; sign in</button>
+      </div>
+      <p class="fine">Returning customers skip this — they go straight to sign-in with email + password (or “email me a link” if they forgot).</p>
+    </div>
+  </section>
+
+  <!-- ============ 3 · DASHBOARD ============ -->
+  <section class="screen" id="s-dashboard">
+    <p class="eyebrow">Your orders</p>
+    <h1>Welcome back</h1>
+    <p class="muted" style="margin-top:0">Follow each order from scan to install. Two things need you: <b>approve designs</b> (your go-ahead to cut) and <b>name your tools</b> (what we engrave on the labels).</p>
+
+    <section class="card" style="margin-top:1.1rem">
+      <h2 style="margin:0;font-size:1.15rem">Frontier Mechanical Trainer</h2>
+      <div class="tracker">
+        <span class="tstep done"><span class="tdot"></span>Received</span><span class="tbar"></span>
+        <span class="tstep done"><span class="tdot"></span>Scanned</span><span class="tbar"></span>
+        <span class="tstep cur"><span class="tdot"></span>Design</span><span class="tbar"></span>
+        <span class="tstep"><span class="tdot"></span>Approval</span><span class="tbar"></span>
+        <span class="tstep"><span class="tdot"></span>Production</span><span class="tbar"></span>
+        <span class="tstep"><span class="tdot"></span>Delivery</span>
+      </div>
+
+      <div class="banner">🏷️ <span><b>2 drawers need tool names</b> — takes about 2 minutes each. We fill in the labels before we cut the foam.</span></div>
+
+      <div class="grid">
+        <div class="card dcard">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start">
+            <h3>pliers – wrenches</h3><span class="badge badge--todo">Needs tool names</span>
+          </div>
+          <div class="chips"><span class="chip">Size <strong>12 × 14 in</strong></span><span class="chip">Stage <strong>Design complete</strong></span></div>
+          <div class="cta">
+            <a href="#" class="go" data-go="labels">Name your tools →</a>
+            <a href="#" class="dim" onclick="return false">Review &amp; approve design →</a>
+          </div>
+        </div>
+        <div class="card dcard">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start">
+            <h3>sockets – metric</h3><span class="badge badge--todo">Needs tool names</span>
+          </div>
+          <div class="chips"><span class="chip">Size <strong>12 × 10 in</strong></span><span class="chip">Stage <strong>Design complete</strong></span></div>
+          <div class="cta">
+            <a href="#" class="go" onclick="return false">Name your tools →</a>
+            <a href="#" class="dim" onclick="return false">Review &amp; approve design →</a>
+          </div>
+        </div>
+        <div class="card dcard">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start">
+            <h3>top drawer – misc</h3><span class="badge badge--ok">Labels ✓ · Approved ✓</span>
+          </div>
+          <div class="chips"><span class="chip">Size <strong>12 × 14 in</strong></span><span class="chip">Stage <strong>In production</strong></span></div>
+          <div class="cta"><a href="#" class="dim" onclick="return false">View design →</a></div>
+        </div>
+        <div class="card dcard">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start">
+            <h3>bottom drawer – power tools</h3><span class="badge badge--dim">Scanning</span>
+          </div>
+          <div class="chips"><span class="chip">Stage <strong>Scanned</strong></span></div>
+          <div class="cta"><a href="#" class="dim" onclick="return false">Waiting on design…</a></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ 4 · LABEL TOOL ============ -->
+  <section class="screen" id="s-labels">
+    <a class="back" href="#" data-go="dashboard">← Back to your orders</a>
+    <p class="eyebrow" style="margin-top:.8rem">Tool labels</p>
+    <h1 id="pageTitle">pliers – wrenches</h1>
+    <p class="muted" style="max-width:64ch">Match the <b>number and color</b> on the photo to the list, and type the
+    label for each pocket. Check <b>N/A</b> for pockets that don’t need one.</p>
+
+    <div class="layout">
+      <section class="card">
+        <svg id="board" class="board" viewBox="0 0 640 500" aria-label="Overhead photo of your drawer with numbered pocket outlines">
+          <defs>
+            <radialGradient id="depth" cx="50%" cy="42%" r="75%">
+              <stop offset="0%" stop-color="#a32219"/><stop offset="72%" stop-color="#8a1b13"/><stop offset="100%" stop-color="#5f110c"/>
+            </radialGradient>
+            <linearGradient id="foam" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#26282b"/><stop offset="55%" stop-color="#1b1d1f"/><stop offset="100%" stop-color="#141517"/>
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="628" height="488" rx="14" fill="url(#foam)"/>
+          <rect x="6" y="6" width="628" height="488" rx="14" fill="none" stroke="#000" stroke-width="3"/>
+          <g id="pockets"></g>
+        </svg>
+        <p class="hint">This is the flat, top-down (orthographic) view from your scan — outlines sit exactly where each pocket will be cut. Click a pocket to jump to its entry; hover an entry to light up its pocket.</p>
+      </section>
+
+      <section class="card" id="panel">
+        <div id="formView">
+          <div class="field">
+            <label for="drawerName">Drawer name <span class="muted" style="font-weight:400">(shown on your dashboard — rename it if you like)</span></label>
+            <input type="text" id="drawerName" value="pliers – wrenches">
+          </div>
+          <div class="progress">
+            <div class="ptrack"><div class="pfill" id="pfill"></div></div>
+            <div class="pcount" id="pcount"></div>
+          </div>
+          <ul class="rows" id="rows"></ul>
+          <button class="btn btn--primary btn--block" id="submitBtn" style="margin-top:1rem" disabled>Submit labels</button>
+          <p class="fine">You can come back and edit these until we start cutting. Labels are engraved exactly as typed.</p>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============ 5 · DONE ============ -->
+  <section class="screen" id="s-done">
+    <div class="narrow">
+      <div class="card success">
+        <div class="big">🏷️</div>
+        <h2 style="font-size:1.2rem;margin:.3rem 0">Labels received</h2>
+        <p class="muted" style="margin:0">We’ll engrave these on <b id="successName">pliers – wrenches</b> before we cut the foam.</p>
+        <ul id="successList"></ul>
+        <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+          <button class="btn btn--ghost" data-go="labels" style="flex:1">Edit labels</button>
+          <button class="btn btn--primary" data-go="dashboard" style="flex:1">Back to orders</button>
+        </div>
+      </div>
+      <p class="fine" style="text-align:center">Sam gets a notification with the label list; the dashboard card flips to “Labels ✓”.</p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ---------------- sample pocket data ---------------- */
+const SHAPES = {
+  wrench:"M -17,-88 a17 17 0 1 1 34 0 c 0 10 -5 14 -9 18 l -1 130 a 8 8 0 0 1 -14 0 l -1 -130 c -4 -4 -9 -8 -9 -18 z",
+  pliers:"M0,-80 C6,-60 10,-40 8,-14 C22,0 26,28 16,52 C12,62 2,64 5,50 C9,36 7,20 0,6 C-7,20 -9,36 -5,50 C-2,64 -12,62 -16,52 C-26,28 -22,0 -8,-14 C-10,-40 -6,-60 0,-80 Z",
+  screwdriver:"M -10,-72 a10 10 0 0 1 20 0 V -24 a10 10 0 0 1 -10 10 a10 10 0 0 1 -10 -10 z M -3.5,-16 h7 V 58 l -3.5 8 l -3.5 -8 z",
+  hammer:"M -46,-78 h92 a10 10 0 0 1 10 10 v14 a10 10 0 0 1 -10 10 h-33 l 3 118 a 10 10 0 0 1 -20 0 l 3,-118 h-33 a10 10 0 0 1 -10 -10 v-14 a10 10 0 0 1 10 -10 z",
+  scoop:"M 0,-26 a26 26 0 1 1 -0.01,0 z"
+};
+const COLORS = ["#4E79A7","#F28E2B","#59A14F","#B07AA1","#76B7B2","#EDC94B","#FF9DA7","#9C755F","#86BCB6","#E15759"];
+const POCKETS = [
+  {shape:"wrench",      tf:"translate(62 128) scale(0.85)",             bx:62,  by:170, ph:"e.g. 10 mm combo wrench",  text:"10 mm wrench", na:false},
+  {shape:"wrench",      tf:"translate(118 130) scale(0.95)",            bx:118, by:176, ph:"e.g. 13 mm combo wrench",  text:"", na:false},
+  {shape:"wrench",      tf:"translate(175 132) scale(1.05)",            bx:175, by:182, ph:"e.g. 15 mm combo wrench",  text:"", na:false},
+  {shape:"wrench",      tf:"translate(234 134) scale(1.15)",            bx:234, by:190, ph:"e.g. 17 mm combo wrench",  text:"", na:false},
+  {shape:"pliers",      tf:"translate(338 120) rotate(8) scale(1.05)",  bx:338, by:158, ph:"e.g. Needle-nose pliers",  text:"", na:false},
+  {shape:"pliers",      tf:"translate(438 124) rotate(-8) scale(1.2)",  bx:438, by:170, ph:"e.g. Lineman’s pliers",    text:"", na:false},
+  {shape:"hammer",      tf:"translate(150 372) rotate(90)",             bx:120, by:372, ph:"e.g. Ball-peen hammer",    text:"", na:false},
+  {shape:"screwdriver", tf:"translate(400 336) rotate(-90) scale(1.1)", bx:400, by:336, ph:"e.g. #2 Phillips",         text:"", na:false},
+  {shape:"screwdriver", tf:"translate(400 396) rotate(90)",             bx:400, by:396, ph:"e.g. 1/4″ flat-head",      text:"", na:false},
+  {shape:"scoop",       tf:"translate(560 372)",                        bx:560, by:372, ph:"Finger scoop",             text:"", na:true},
+];
+
+/* ---------------- flow router ---------------- */
+const ORDER=["email","password","dashboard","labels","done"];
+function go(s){
+  document.querySelectorAll(".screen").forEach(el=>el.classList.toggle("on",el.id==="s-"+s));
+  document.querySelectorAll(".fstep").forEach(b=>b.setAttribute("aria-current",b.dataset.s===s));
+  document.getElementById("whoami").textContent =
+    ORDER.indexOf(s)>=2 ? "jeff@waddoupsmachine.com · Sign out" : "not signed in";
+  if(s==="done") buildSummary();
+  window.scrollTo({top:0});
+}
+document.querySelectorAll("[data-go]").forEach(el=>el.addEventListener("click",e=>{e.preventDefault();go(el.dataset.go);}));
+document.querySelectorAll(".fstep").forEach(b=>b.addEventListener("click",()=>go(b.dataset.s)));
+
+/* ---------------- board ---------------- */
+const svgNS="http://www.w3.org/2000/svg";
+const gP=document.getElementById("pockets");
+POCKETS.forEach((p,i)=>{
+  const g=document.createElementNS(svgNS,"g");
+  g.setAttribute("class","pocket"); g.dataset.idx=i; g.style.setProperty("--pc",COLORS[i]);
+  g.setAttribute("tabindex","0"); g.setAttribute("role","button"); g.setAttribute("aria-label",`Pocket ${i+1}`);
+  const path=document.createElementNS(svgNS,"path");
+  path.setAttribute("d",SHAPES[p.shape]); path.setAttribute("transform",p.tf); path.setAttribute("class","shape");
+  g.appendChild(path);
+  const b=document.createElementNS(svgNS,"g"); b.setAttribute("class","pbadge");
+  const c=document.createElementNS(svgNS,"circle"); c.setAttribute("cx",p.bx); c.setAttribute("cy",p.by); c.setAttribute("r","12");
+  const t=document.createElementNS(svgNS,"text"); t.setAttribute("x",p.bx); t.setAttribute("y",p.by); t.textContent=i+1;
+  b.appendChild(c); b.appendChild(t); g.appendChild(b);
+  gP.appendChild(g);
+});
+
+/* ---------------- entry rows ---------------- */
+const rows=document.getElementById("rows");
+POCKETS.forEach((p,i)=>{
+  const li=document.createElement("li");
+  li.className="row"; li.dataset.idx=i; li.style.setProperty("--rc",COLORS[i]);
+  li.innerHTML=`
+    <div class="sw">${i+1}<span class="done">✓</span></div>
+    <input type="text" placeholder="${p.ph}" value="${p.text}" aria-label="Label for pocket ${i+1}">
+    <label class="nawrap"><input type="checkbox" ${p.na?"checked":""} aria-label="No label for pocket ${i+1}">N/A</label>`;
+  rows.appendChild(li);
+});
+
+/* ---------------- state & interactions ---------------- */
+const pocketEls=[...gP.querySelectorAll(".pocket")];
+const rowEls=[...rows.querySelectorAll(".row")];
+const pfill=document.getElementById("pfill"), pcount=document.getElementById("pcount");
+const submitBtn=document.getElementById("submitBtn");
+
+function rowState(i){
+  const inp=rowEls[i].querySelector('input[type=text]');
+  const na=rowEls[i].querySelector('input[type=checkbox]').checked;
+  return {text:inp.value.trim(), na, done: na || inp.value.trim().length>0};
+}
+function refresh(){
+  let done=0;
+  rowEls.forEach((li,i)=>{
+    const s=rowState(i);
+    li.classList.toggle("na",s.na); li.classList.toggle("ok",s.done);
+    li.querySelector('input[type=text]').disabled=s.na;
+    pocketEls[i].classList.toggle("na",s.na);
+    if(s.done)done++;
+  });
+  pfill.style.width=(done/POCKETS.length*100)+"%";
+  pcount.textContent=done===POCKETS.length
+    ? "All "+POCKETS.length+" pockets covered — ready to submit."
+    : done+" of "+POCKETS.length+" pockets named · "+(POCKETS.length-done)+" to go";
+  submitBtn.disabled=done!==POCKETS.length;
+}
+function hl(i,on){pocketEls[i].classList.toggle("hl",on);rowEls[i].classList.toggle("hl",on);}
+rowEls.forEach((li,i)=>{
+  li.addEventListener("mouseenter",()=>hl(i,true));
+  li.addEventListener("mouseleave",()=>hl(i,false));
+  li.addEventListener("focusin",()=>hl(i,true));
+  li.addEventListener("focusout",()=>hl(i,false));
+  li.addEventListener("input",refresh);
+});
+pocketEls.forEach((g,i)=>{
+  g.addEventListener("mouseenter",()=>hl(i,true));
+  g.addEventListener("mouseleave",()=>hl(i,false));
+  const jump=()=>{rowEls[i].scrollIntoView({behavior:"smooth",block:"center"});
+    const inp=rowEls[i].querySelector('input[type=text]');
+    setTimeout(()=>{(inp.disabled?rowEls[i].querySelector('input[type=checkbox]'):inp).focus({preventScroll:true});},250);};
+  g.addEventListener("click",jump);
+  g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();jump();}});
+});
+
+/* ---------------- submit / summary ---------------- */
+submitBtn.addEventListener("click",()=>go("done"));
+function buildSummary(){
+  const list=document.getElementById("successList"); list.innerHTML="";
+  POCKETS.forEach((p,i)=>{
+    const s=rowState(i);
+    const li=document.createElement("li"); if(s.na)li.className="na";
+    li.innerHTML=`<span class="n">${i+1}</span><span>${s.na?"No label":(s.text||"—").replace(/</g,"&lt;")}</span>`;
+    list.appendChild(li);
+  });
+  document.getElementById("successName").textContent=document.getElementById("drawerName").value.trim()||"your drawer";
+}
+document.getElementById("drawerName").addEventListener("input",e=>{
+  document.getElementById("pageTitle").textContent=e.target.value.trim()||"Untitled drawer";
+});
+
+refresh();
+go("email");
+</script>
+</body>
+</html>

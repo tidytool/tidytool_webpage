@@ -10,11 +10,18 @@
 // Optional:
 //   NOTIFY_FROM         — default "TidyTool <no-reply@thetidytool.com>"
 //   NOTIFY_REPLY_TO     — default "samochristensen@gmail.com"
+//   NOTIFY_OWNER        — internal-notification inbox (labels_submitted);
+//                         default NOTIFY_REPLY_TO
+//
+// Types: design_ready / approved email the CUSTOMER (`to` from the payload).
+// labels_submitted is INTERNAL-ONLY — it ignores payload `to` and emails the
+// owner (customer decision 2026-08-03: no automated customer emails for the
+// label flow; Sam just needs to know labels arrived).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 type Payload = {
-  type: "design_ready" | "approved";
+  type: "design_ready" | "approved" | "labels_submitted";
   to: string;
   customer_name?: string;
   nickname?: string;
@@ -45,7 +52,16 @@ function render(p: Payload): { subject: string; html: string } {
           ctaUrl: approveUrl,
           footer: "Nothing gets cut until you approve it.",
         }
-      : {
+      : p.type === "labels_submitted"
+        ? {
+            subject: `Labels submitted — ${p.nickname?.trim() || p.drawer_id}`,
+            heading: "A customer submitted tool labels",
+            intro: `${name} submitted labels for <strong>${drawer}</strong>${p.note?.trim() ? "" : "."} Review them before export.`,
+            cta: "Open the label sheet",
+            ctaUrl: `https://app.thetidytool.com/labels/${encodeURIComponent(p.drawer_id)}`,
+            footer: "Internal notification — the customer was not emailed.",
+          }
+        : {
           subject: `Design approved — ${p.nickname?.trim() || "we're cutting"}`,
           heading: "Approved — we're cutting",
           intro: `Hi ${name}, thanks for signing off on <strong>${drawer}</strong>. It's headed to the CNC. We'll be in touch when it ships.`,
@@ -103,7 +119,21 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  if (!p?.to || !p?.drawer_id || !["design_ready", "approved"].includes(p?.type)) {
+  if (!p?.drawer_id || !["design_ready", "approved", "labels_submitted"].includes(p?.type)) {
+    return new Response(JSON.stringify({ error: "invalid payload" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // labels_submitted is internal-only: the recipient is ALWAYS the owner
+  // inbox, never whatever the payload carries. Other types require `to`.
+  if (p.type === "labels_submitted") {
+    p.to =
+      Deno.env.get("NOTIFY_OWNER") ??
+      Deno.env.get("NOTIFY_REPLY_TO") ??
+      "samochristensen@gmail.com";
+  } else if (!p.to) {
     return new Response(JSON.stringify({ error: "invalid payload" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },

@@ -146,6 +146,11 @@ function DrawerRow({
                 DXF →
               </a>
             ) : null}
+            {dxfUrl ? (
+              // Staff view of the customer label sheet — read entries, and
+              // align the pocket overlay on legacy drawers missing corners.
+              <a href={`/labels/${drawer.id}`}>Tool labels →</a>
+            ) : null}
           </p>
         ) : null}
 

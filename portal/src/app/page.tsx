@@ -5,9 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getClaims } from "@/lib/supabase/auth";
 import {
   type MyDrawer,
+  type MyLabelStatus,
   type OrderTrackerData,
   STATUS_LABELS,
   formatDimensions,
+  needsLabels,
 } from "@/lib/types";
 
 function ApprovalBadge({ status }: { status: MyDrawer["customer_approval_status"] }) {
@@ -18,18 +20,16 @@ function ApprovalBadge({ status }: { status: MyDrawer["customer_approval_status"
   return <span className="badge badge--pending">Awaiting approval</span>;
 }
 
-function DrawerCard({ d }: { d: MyDrawer }) {
+function DrawerCard({ d, label }: { d: MyDrawer; label: MyLabelStatus | undefined }) {
   const name = d.nickname || "Your TidyTool drawer";
   const dims = formatDimensions(d.dimensions);
   const stage = d.status ? STATUS_LABELS[d.status] ?? d.status : null;
   const needsAction = d.customer_approval_status === "pending";
+  const askLabels = label ? needsLabels(label) : false;
+  const labelsDone = !!label?.labels_submitted_at;
 
   return (
-    <a
-      href={`/approve/${d.id}`}
-      className="card"
-      style={{ display: "block", textDecoration: "none", color: "inherit" }}
-    >
+    <div className="card">
       <div
         style={{
           display: "flex",
@@ -60,16 +60,40 @@ function DrawerCard({ d }: { d: MyDrawer }) {
             Stage <strong>{stage}</strong>
           </span>
         ) : null}
+        {labelsDone ? <span className="chip">Labels ✓</span> : null}
       </div>
 
-      <p style={{ margin: "0.9rem 0 0", fontWeight: 700, color: "var(--c-accent)" }}>
-        {needsAction ? "Review & approve →" : "View design →"}
-      </p>
-    </a>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", marginTop: "0.9rem" }}>
+        {askLabels ? (
+          <a
+            href={`/labels/${d.id}`}
+            style={{ fontWeight: 700, color: "var(--c-accent)", textDecoration: "none" }}
+          >
+            Name your tools →
+          </a>
+        ) : null}
+        <a
+          href={`/approve/${d.id}`}
+          style={{
+            fontWeight: askLabels ? 600 : 700,
+            color: askLabels ? "var(--c-text-dim)" : "var(--c-accent)",
+            textDecoration: "none",
+          }}
+        >
+          {needsAction ? "Review & approve →" : "View design →"}
+        </a>
+      </div>
+    </div>
   );
 }
 
-function DrawerGrid({ drawers }: { drawers: MyDrawer[] }) {
+function DrawerGrid({
+  drawers,
+  labels,
+}: {
+  drawers: MyDrawer[];
+  labels: Map<string, MyLabelStatus>;
+}) {
   return (
     <div
       style={{
@@ -80,7 +104,7 @@ function DrawerGrid({ drawers }: { drawers: MyDrawer[] }) {
       }}
     >
       {drawers.map((d) => (
-        <DrawerCard key={d.id} d={d} />
+        <DrawerCard key={d.id} d={d} label={labels.get(d.id)} />
       ))}
     </div>
   );
@@ -92,12 +116,20 @@ export default async function DashboardPage() {
   const email = (claims.email as string | undefined) ?? undefined;
 
   const supabase = await createClient();
-  const [{ data, error }, adminRes] = await Promise.all([
+  const [{ data, error }, adminRes, labelRes] = await Promise.all([
     supabase.rpc("get_my_drawers"),
     supabase.rpc("is_admin"),
+    // Absent until migration 20260803120000 is applied — degrades to no CTAs.
+    supabase.rpc("get_my_label_status"),
   ]);
   const drawers = (data ?? []) as MyDrawer[];
   const isAdmin = adminRes.data === true;
+  const labels = new Map<string, MyLabelStatus>(
+    ((labelRes.error ? [] : labelRes.data ?? []) as MyLabelStatus[]).map((l) => [
+      l.drawer_id,
+      l,
+    ]),
+  );
 
   // The get_my_drawers RPC is staged in supabase/migrations and may not be applied yet.
   const migrationPending =
@@ -134,8 +166,9 @@ export default async function DashboardPage() {
         <p className="eyebrow">Your orders</p>
         <h1>Welcome back</h1>
         <p className="muted">
-          Follow each order from scan to install, and approve designs when
-          they&apos;re ready — approving is your go-ahead for us to cut.
+          Follow each order from scan to install. Two things need you:{" "}
+          <b>approve designs</b> — your go-ahead for us to cut — and{" "}
+          <b>name your tools</b>, what we write on each pocket&apos;s label.
         </p>
 
         {migrationPending ? (
@@ -176,6 +209,10 @@ export default async function DashboardPage() {
               const firstPending = group.find(
                 (d) => d.customer_approval_status === "pending" && d.design_preview_url,
               );
+              const needCount = group.filter((d) => {
+                const l = labels.get(d.id);
+                return l ? needsLabels(l) : false;
+              }).length;
               return (
                 <section key={orderId} style={{ marginTop: "1.5rem" }}>
                   {tracker ? (
@@ -184,14 +221,27 @@ export default async function DashboardPage() {
                       approveHref={firstPending ? `/approve/${firstPending.id}` : null}
                     />
                   ) : null}
-                  <DrawerGrid drawers={group} />
+                  {needCount > 0 ? (
+                    <div className="lbl-banner">
+                      🏷️{" "}
+                      <span>
+                        <b>
+                          {needCount} drawer{needCount === 1 ? "" : "s"} need
+                          {needCount === 1 ? "s" : ""} tool names
+                        </b>{" "}
+                        — a couple of minutes each. We fill in the labels before we
+                        cut the foam.
+                      </span>
+                    </div>
+                  ) : null}
+                  <DrawerGrid drawers={group} labels={labels} />
                 </section>
               );
             })}
             {loose.length > 0 ? (
               <section style={{ marginTop: "1.5rem" }}>
                 {orderIds.length > 0 ? <h2>Other designs</h2> : null}
-                <DrawerGrid drawers={loose} />
+                <DrawerGrid drawers={loose} labels={labels} />
               </section>
             ) : null}
           </>
