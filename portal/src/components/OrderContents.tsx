@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { BoxCard } from "@/components/BoxCard";
 import { DrawerBoxControls } from "@/components/DrawerBoxControls";
+import { DrawerQuickView, type DrawerQuickViewData } from "@/components/DrawerQuickView";
 import { createBoxAction } from "@/app/admin/box-actions";
 import { updateNicknameAction, markDeliveredAction } from "@/app/admin/actions";
 import { STATUS_LABELS, type ApprovalStatus } from "@/lib/types";
@@ -63,11 +64,13 @@ function DrawerRow({
   drawer,
   boxes,
   organize,
+  onQuickView,
 }: {
   orderId: string;
   drawer: DrawerVM;
   boxes: Box[];
   organize: boolean;
+  onQuickView: (d: DrawerQuickViewData) => void;
 }) {
   const box = boxes.find((b) => b.id === drawer.box_id) ?? null;
   const physical = (box ? box.quantity : 1) * drawer.quantity;
@@ -79,7 +82,30 @@ function DrawerRow({
   const dxfUrl = dxfPublicUrl(drawer.dxf_url);
 
   return (
-    <div className="drawer-row">
+    <div
+      className="drawer-row drawer-row--peek"
+      title="Click for a closer look"
+      // A click anywhere non-interactive opens the drawer quick view — large
+      // photo, links, 3D scan. Clicks on links/buttons/inputs (Organize forms
+      // live inside the row) keep their normal behavior.
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a, button, input, select, textarea, label, summary")) return;
+        onQuickView({
+          id: drawer.id,
+          nickname: drawer.nickname,
+          status: drawer.status,
+          stage_label: drawer.stage_label,
+          customer_approval_status: drawer.customer_approval_status,
+          tier: drawer.tier,
+          photo_url: drawer.photo_url,
+          design_preview_url: drawer.design_preview_url,
+          point_cloud_url: drawer.point_cloud_url,
+          dxf_url: drawer.dxf_url,
+          boxLabel: box?.label ?? null,
+          copies: physical,
+        });
+      }}
+    >
       {drawer.photo_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -166,6 +192,7 @@ export function OrderContents({
   drawers: DrawerVM[];
 }) {
   const [organize, setOrganize] = useState(false);
+  const [quickView, setQuickView] = useState<DrawerQuickViewData | null>(null);
   const trays = drawers.filter((d) => !d.box_id);
   const physicalTotal = drawers.reduce((s, d) => {
     const b = boxes.find((x) => x.id === d.box_id) ?? null;
@@ -234,7 +261,7 @@ export function OrderContents({
                 ) : (
                   <div style={{ display: "grid", gap: "0.6rem" }}>
                     {inBox.map((d) => (
-                      <DrawerRow key={d.id} orderId={orderId} drawer={d} boxes={boxes} organize={organize} />
+                      <DrawerRow key={d.id} orderId={orderId} drawer={d} boxes={boxes} organize={organize} onQuickView={setQuickView} />
                     ))}
                   </div>
                 )}
@@ -261,7 +288,7 @@ export function OrderContents({
               ) : (
                 <div style={{ display: "grid", gap: "0.6rem" }}>
                   {trays.map((d) => (
-                    <DrawerRow key={d.id} orderId={orderId} drawer={d} boxes={boxes} organize={organize} />
+                    <DrawerRow key={d.id} orderId={orderId} drawer={d} boxes={boxes} organize={organize} onQuickView={setQuickView} />
                   ))}
                 </div>
               )}
@@ -290,6 +317,8 @@ export function OrderContents({
           </button>
         </form>
       ) : null}
+
+      <DrawerQuickView drawer={quickView} onClose={() => setQuickView(null)} />
     </section>
   );
 }
