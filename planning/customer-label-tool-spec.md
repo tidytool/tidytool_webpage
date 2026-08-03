@@ -132,3 +132,12 @@ Labels section per drawer on the admin order page (pocket #, text, N/A struck), 
 All 15 have scan-flow ortho photos (`photo_*.png`). Pocket counts derived from parsed DXFs: `(LWPOLYLINE − 1) + CIRCLE`.
 
 **Out of scope (decided):** automated invite/notification emails to customers; per-person logins for multi-user companies (shared credential instead; org route remains if ever needed); label color choices; text-length enforcement.
+
+## Amendments — pre-merge review round (2026-08-03, commit 687fa27)
+
+Accepted during the pre-merge code review; supersede the matching locked decisions above where they differ:
+
+- **Decision 7 (no text limit), amended:** a 500-character server-side sanity cap now applies to label text and drawer name (200 for the submitter's name), mirrored by `maxLength` on the inputs. Intent unchanged — labels are free text and Sam adjusts wording at manufacturing time; the cap only blocks accidental/abusive megabyte strings.
+- **Decision 6 (auto-save), extended:** the drawer rename now persists with auto-saved drafts (`save_drawer_labels.p_nickname`), not only on submit.
+- **Decision 8 (auto-lock), extended:** cancelled drawers (`drawer.state = 'cancelled'`) count as locked everywhere — no edit, no submit, no dashboard CTA, no notify email.
+- **Robustness:** editability is computed server-side (`get_drawer_labels.editable` — stage ≥ designed and not locked); auto-saves are serialized client-side so an older replace-all write can never land after a newer one; submit flushes the draft first and aborts if that write fails, and passes the client's pocket count (`p_expected_count`) so a submit over a stale/partial row set is rejected; `save_drawer_labels` stores the client's parsed `dxf_revision` so the "design changed" warning survives a stale-tab autosave; duplicate DXF entity handles are deduped in the parser and rejected by the RPC; pocket outlines are keyboard-accessible; staff get a "Re-align outlines" button when corners already exist.
