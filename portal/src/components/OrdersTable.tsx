@@ -1,15 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminOrderRow, AdminCustomer } from "@/lib/types";
 import { formatCents } from "@/lib/types";
 import { bulkAssignOrders, bulkDeleteOrders } from "@/app/admin/actions";
 import { DesignProgress } from "@/components/DesignProgress";
-import { OrderQuickView } from "@/components/OrderQuickView";
-
-/** How long a single click waits to make sure it isn't half a double-click. */
-const DBLCLICK_GRACE_MS = 250;
 
 const GRID = "1.4rem minmax(200px, 2fr) minmax(140px, 1.2fr) 5rem minmax(110px, 1fr) 6.5rem 7.5rem";
 
@@ -30,26 +26,6 @@ export function OrdersTable({
   const [bulkCustomer, setBulkCustomer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [quickView, setQuickView] = useState<AdminOrderRow | null>(null);
-  // Single click navigates after a short grace period; a double-click within
-  // it cancels the navigation and opens the quick-view popup instead.
-  const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (navTimer.current) clearTimeout(navTimer.current);
-  }, []);
-
-  const rowClick = (o: AdminOrderRow) => {
-    if (navTimer.current) clearTimeout(navTimer.current);
-    navTimer.current = setTimeout(() => {
-      router.push(`/admin/orders/${o.order_id}`);
-    }, DBLCLICK_GRACE_MS);
-  };
-
-  const rowDoubleClick = (o: AdminOrderRow) => {
-    if (navTimer.current) clearTimeout(navTimer.current);
-    navTimer.current = null;
-    setQuickView(o);
-  };
 
   const allSelected = orders.length > 0 && selected.size === orders.length;
 
@@ -148,20 +124,13 @@ export function OrdersTable({
               className="trow trow--click"
               role="row"
               style={{ gridTemplateColumns: GRID }}
-              onClick={() => rowClick(o)}
-              onDoubleClick={() => rowDoubleClick(o)}
-              // Stop the browser text-selection a double-click would otherwise
-              // trigger, without disabling normal drag-to-select on the row.
-              onMouseDown={(e) => {
-                if (e.detail > 1) e.preventDefault();
-              }}
+              onClick={() => router.push(`/admin/orders/${o.order_id}`)}
             >
               <input
                 type="checkbox"
                 checked={selected.has(o.order_id)}
                 onChange={() => toggle(o.order_id)}
                 onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
                 aria-label={`Select order from ${o.customer_name || "unknown"}`}
               />
               <span>
@@ -184,8 +153,6 @@ export function OrdersTable({
           ))
         )}
       </div>
-
-      <OrderQuickView order={quickView} onClose={() => setQuickView(null)} />
     </>
   );
 }
