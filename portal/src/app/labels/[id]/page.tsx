@@ -41,14 +41,15 @@ export default async function LabelsPage({
       <main className="wrap wrap--wide">
         <p style={{ margin: "0 0 1rem" }}>
           <a href="/" className="muted">
-            ← All designs
+            ← All orders
           </a>
         </p>
         <p className="eyebrow">Tool labels</p>
         <h1>{name}</h1>
         <p className="muted" style={{ maxWidth: "64ch" }}>
-          Match the <b>number and color</b> on the photo to the list and type what we should write on the label for each
-          pocket. Check <b>N/A</b> for pockets that don&apos;t need one — we fill in the labels before we cut the foam.
+          Each pocket is numbered on the photo. Enter the text to engrave on that
+          pocket&apos;s label, or mark <b>No label</b> for pockets that don&apos;t
+          need one. Labels are engraved before the foam is cut.
         </p>
 
         {migrationPending ? (

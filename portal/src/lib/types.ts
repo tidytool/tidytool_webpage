@@ -146,7 +146,7 @@ export type MyLabelStatus = {
   locked: boolean;
 };
 
-/** True when the dashboard should show "Name your tools" for this drawer. */
+/** True when the dashboard should show "Labels needed" for this drawer. */
 export function needsLabels(s: MyLabelStatus): boolean {
   return (
     (s.stage_sort ?? 0) >= DESIGNED_SORT &&

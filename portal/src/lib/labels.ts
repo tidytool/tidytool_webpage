@@ -328,12 +328,15 @@ export function dxfToPhoto(
   return [px, py];
 }
 
-/** Categorical, colorblind-aware palette; cycles past 10. */
-export const POCKET_COLORS = [
-  "#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#76B7B2",
-  "#EDC94B", "#FF9DA7", "#9C755F", "#86BCB6", "#E15759",
-] as const;
+/**
+ * Single technical outline color (2026-08 UX pass): identity is carried by the
+ * pocket NUMBER, not a per-pocket hue — the multi-color "sketch" palette read
+ * as playful against the manufacturing brand. Mirrors --c-accent in
+ * globals.css; a literal because SVG presentation attributes and the DOM
+ * consumers here need a concrete value.
+ */
+export const POCKET_OUTLINE = "#E8312A";
 
-export function pocketColor(index: number): string {
-  return POCKET_COLORS[(index - 1) % POCKET_COLORS.length];
+export function pocketColor(_index: number): string {
+  return POCKET_OUTLINE;
 }
