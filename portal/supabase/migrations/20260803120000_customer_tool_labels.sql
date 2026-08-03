@@ -101,19 +101,21 @@ as $$
    where s.domain = 'drawer' and s.code = p_stage;
 $$;
 
--- Labels lock threshold: at/after in_production the labels are frozen.
-create or replace function public._labels_locked(p_stage text)
+-- Labels lock: frozen at/after in_production, and for cancelled drawers
+-- (a cancelled drawer should neither invite edits nor email Sam on submit).
+create or replace function public._labels_locked(p_stage text, p_state text)
 returns boolean
 language sql
 stable
 security definer
 set search_path to 'public'
 as $$
-  select coalesce(
-    public._drawer_stage_sort(p_stage) >=
-      (select sort_order from public.status_def
-        where domain = 'drawer' and code = 'in_production'),
-    false);
+  select p_state = 'cancelled'
+      or coalesce(
+           public._drawer_stage_sort(p_stage) >=
+             (select sort_order from public.status_def
+               where domain = 'drawer' and code = 'in_production'),
+           false);
 $$;
 
 -- Internal-only "labels submitted" note to Sam via the notify edge function.
@@ -198,7 +200,12 @@ begin
       'stage_sort', public._drawer_stage_sort(d.stage),
       'labels_submitted_at', d.labels_submitted_at,
       'labels_submitted_by', d.labels_submitted_by,
-      'locked', public._labels_locked(d.stage),
+      'locked', public._labels_locked(d.stage, d.state),
+      -- Server-computed so the client carries no stage constants.
+      'editable', not public._labels_locked(d.stage, d.state)
+                  and coalesce(public._drawer_stage_sort(d.stage), 0) >=
+                      (select sort_order from public.status_def
+                        where domain = 'drawer' and code = 'designed'),
       'is_staff', v_staff
     ),
     'labels', coalesce((
@@ -219,7 +226,15 @@ $$;
 -- Draft auto-save. Replace-all semantics: rows absent from the payload are
 -- deleted (handles DXF revisions changing the pocket set). p_rows is a jsonb
 -- array of {pocket_key, pocket_index, label_text, na}.
-create or replace function public.save_drawer_labels(p_drawer_id uuid, p_rows jsonb)
+--
+-- p_dxf_revision is the revision the CLIENT parsed its pockets from — stored
+-- verbatim so a stale open tab autosaving after Sam revises the DXF leaves a
+-- visible revision mismatch (the designChanged warning). Stamping the
+-- drawer's current revision here would silence exactly that case.
+-- p_nickname (optional) lets a rename persist with drafts, not only submit.
+create or replace function public.save_drawer_labels(
+  p_drawer_id uuid, p_rows jsonb,
+  p_dxf_revision integer default null, p_nickname text default null)
 returns json
 language plpgsql
 security definer
@@ -227,6 +242,7 @@ set search_path to 'public'
 as $$
 declare
   d public.drawer;
+  v_nick text := nullif(btrim(coalesce(p_nickname, '')), '');
   v_n int;
 begin
   if not public.is_staff() and not public._customer_can_see_drawer(p_drawer_id) then
@@ -238,13 +254,29 @@ begin
   if jsonb_array_length(p_rows) > 200 then
     raise exception 'Too many label rows.' using errcode = '22000';
   end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_rows) r
+     where length(coalesce(r->>'label_text', '')) > 500) then
+    raise exception 'Label text is limited to 500 characters.' using errcode = '22000';
+  end if;
+  if length(coalesce(v_nick, '')) > 500 then
+    raise exception 'Drawer name is limited to 500 characters.' using errcode = '22000';
+  end if;
+  -- A duplicated pocket_key would make the upsert fail with "ON CONFLICT
+  -- cannot affect row a second time" — reject it as a payload error instead.
+  if exists (
+    select 1 from jsonb_array_elements(p_rows) r
+     where coalesce(btrim(r->>'pocket_key'), '') <> ''
+     group by r->>'pocket_key' having count(*) > 1) then
+    raise exception 'Duplicate pocket in payload.' using errcode = '22000';
+  end if;
 
   select * into d from public.drawer where id = p_drawer_id for update;
   if not found then
     raise exception 'Drawer not found.' using errcode = 'P0002';
   end if;
-  if public._labels_locked(d.stage) then
-    raise exception 'This drawer is in production — labels are locked.' using errcode = '42501';
+  if public._labels_locked(d.stage, d.state) then
+    raise exception 'This drawer is locked — labels can no longer change.' using errcode = '42501';
   end if;
   if coalesce(public._drawer_stage_sort(d.stage), 0) <
      (select sort_order from public.status_def where domain='drawer' and code='designed') then
@@ -264,7 +296,7 @@ begin
          coalesce((r->>'pocket_index')::int, 0),
          nullif(btrim(coalesce(r->>'label_text', '')), ''),
          coalesce((r->>'na')::boolean, false),
-         d.dxf_revision,
+         coalesce(p_dxf_revision, d.dxf_revision),
          now()
     from jsonb_array_elements(p_rows) r
    where coalesce(btrim(r->>'pocket_key'), '') <> ''
@@ -275,6 +307,10 @@ begin
          dxf_revision = excluded.dxf_revision,
          updated_at   = now();
 
+  if v_nick is not null then
+    update public.drawer set nickname = v_nick where id = p_drawer_id;
+  end if;
+
   select count(*) into v_n from public.drawer_label where drawer_id = p_drawer_id;
   return json_build_object('ok', true, 'rows', v_n);
 end;
@@ -283,8 +319,11 @@ $$;
 -- Explicit submit: stamps who/when, optionally renames the drawer, logs a
 -- drawer_event, and pings Sam. Rows must already be saved (auto-save) and
 -- each must carry text or N/A. Re-submitting before lock is allowed.
+-- p_expected_count: the pocket count the CLIENT sees — rejects a submit over
+-- a partially-saved or stale row set.
 create or replace function public.submit_drawer_labels(
-  p_drawer_id uuid, p_name text, p_nickname text default null)
+  p_drawer_id uuid, p_name text, p_nickname text default null,
+  p_expected_count integer default null)
 returns json
 language plpgsql
 security definer
@@ -302,6 +341,9 @@ begin
   if v_name = '' then
     raise exception 'A name is required to submit labels.' using errcode = '22000';
   end if;
+  if length(v_name) > 200 or length(coalesce(v_nick, '')) > 500 then
+    raise exception 'That name is too long.' using errcode = '22000';
+  end if;
   if not public.is_staff() and not public._customer_can_see_drawer(p_drawer_id) then
     raise exception 'Drawer not found.' using errcode = 'P0002';
   end if;
@@ -310,8 +352,8 @@ begin
   if not found then
     raise exception 'Drawer not found.' using errcode = 'P0002';
   end if;
-  if public._labels_locked(d.stage) then
-    raise exception 'This drawer is in production — labels are locked.' using errcode = '42501';
+  if public._labels_locked(d.stage, d.state) then
+    raise exception 'This drawer is locked — labels can no longer change.' using errcode = '42501';
   end if;
 
   select count(*),
@@ -323,6 +365,9 @@ begin
 
   if v_total = 0 then
     raise exception 'No labels to submit yet.' using errcode = '22000';
+  end if;
+  if p_expected_count is not null and p_expected_count <> v_total then
+    raise exception 'Your labels are out of sync — refresh the page and try again.' using errcode = '22000';
   end if;
   if v_named + v_na < v_total then
     raise exception 'Every pocket needs a label or N/A before submitting.' using errcode = '22000';
@@ -422,7 +467,7 @@ as $$
          public._drawer_stage_sort(d.stage),
          d.dxf_url is not null and btrim(d.dxf_url) <> '',
          d.labels_submitted_at,
-         public._labels_locked(d.stage)
+         public._labels_locked(d.stage, d.state)
     from public.drawer d
     join public."order" o on o.id = d.order_id
     join me on (
@@ -438,19 +483,19 @@ $$;
 -- 5. Grants — authenticated only; internal helpers stay unexposed.
 -- ---------------------------------------------------------------------------
 
-revoke all on function public._customer_can_see_drawer(uuid)                 from public, anon, authenticated;
-revoke all on function public._drawer_stage_sort(text)                       from public, anon, authenticated;
-revoke all on function public._labels_locked(text)                           from public, anon, authenticated;
-revoke all on function public._notify_labels_submitted(uuid, text, text)     from public, anon, authenticated;
+revoke all on function public._customer_can_see_drawer(uuid)                        from public, anon, authenticated;
+revoke all on function public._drawer_stage_sort(text)                              from public, anon, authenticated;
+revoke all on function public._labels_locked(text, text)                            from public, anon, authenticated;
+revoke all on function public._notify_labels_submitted(uuid, text, text)            from public, anon, authenticated;
 
-revoke all on function public.get_drawer_labels(uuid)                        from public, anon;
-revoke all on function public.save_drawer_labels(uuid, jsonb)                from public, anon;
-revoke all on function public.submit_drawer_labels(uuid, text, text)         from public, anon;
-revoke all on function public.set_drawer_reference_corners(uuid, jsonb)      from public, anon;
-revoke all on function public.get_my_label_status()                          from public, anon;
+revoke all on function public.get_drawer_labels(uuid)                               from public, anon;
+revoke all on function public.save_drawer_labels(uuid, jsonb, integer, text)        from public, anon;
+revoke all on function public.submit_drawer_labels(uuid, text, text, integer)       from public, anon;
+revoke all on function public.set_drawer_reference_corners(uuid, jsonb)             from public, anon;
+revoke all on function public.get_my_label_status()                                 from public, anon;
 
-grant execute on function public.get_drawer_labels(uuid)                     to authenticated;
-grant execute on function public.save_drawer_labels(uuid, jsonb)             to authenticated;
-grant execute on function public.submit_drawer_labels(uuid, text, text)      to authenticated;
-grant execute on function public.set_drawer_reference_corners(uuid, jsonb)   to authenticated;
-grant execute on function public.get_my_label_status()                       to authenticated;
+grant execute on function public.get_drawer_labels(uuid)                            to authenticated;
+grant execute on function public.save_drawer_labels(uuid, jsonb, integer, text)     to authenticated;
+grant execute on function public.submit_drawer_labels(uuid, text, text, integer)    to authenticated;
+grant execute on function public.set_drawer_reference_corners(uuid, jsonb)          to authenticated;
+grant execute on function public.get_my_label_status()                              to authenticated;

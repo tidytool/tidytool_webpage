@@ -18,10 +18,12 @@ export default async function LabelsPage({
   const claims = await getClaims();
   if (!claims) redirect("/login");
   const email = (claims.email as string | undefined) ?? undefined;
+  // Undefined (not "") when there's no full_name, so the editor can fall
+  // back to the previous submitter's name on re-submit.
   const defaultName =
     ((claims.user_metadata as Record<string, unknown> | undefined)?.full_name as
       | string
-      | undefined) ?? "";
+      | undefined) || undefined;
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_drawer_labels", { p_drawer_id: id });

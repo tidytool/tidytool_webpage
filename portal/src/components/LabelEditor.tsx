@@ -12,12 +12,16 @@
  * States:
  *  - corners present → overlay + entry list (the normal path)
  *  - no corners + staff → align mode: drag the four drawer corners on the
- *    photo, save via set_drawer_reference_corners (backfills legacy drawers)
+ *    photo, save via set_drawer_reference_corners (backfills legacy drawers);
+ *    staff can also re-align existing corners
  *  - no corners + customer → photo and a numbered plan drawing side by side
  *
- * Drafts auto-save (debounced, replace-all save_drawer_labels); an explicit
- * Submit stamps labels_submitted_* with a typed name (shared logins). Locked
- * (stage at/after in_production) renders read-only.
+ * Drafts auto-save (debounced; saves are SERIALIZED through a promise chain so
+ * a slow older request can never overwrite a newer one — replace-all semantics
+ * make a stale write total, not partial). An explicit Submit stamps
+ * labels_submitted_* with a typed name (shared logins). `editable` comes from
+ * the server (stage ≥ designed, not locked/cancelled) — no stage constants
+ * client-side.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -53,12 +57,16 @@ export type DrawerLabelsData = {
     labels_submitted_at: string | null;
     labels_submitted_by: string | null;
     locked: boolean;
+    /** Server-computed: stage ≥ designed AND not locked/cancelled. */
+    editable: boolean;
     is_staff: boolean;
   };
   labels: LabelRowData[];
 };
 
 type Row = { key: string; index: number; text: string; na: boolean };
+
+const MAX_TEXT = 500;
 
 const DEFAULT_QUAD: CornerQuad = [
   [0.12, 0.12],
@@ -76,6 +84,7 @@ export function LabelEditor({
 }) {
   const router = useRouter();
   const d = data.drawer;
+  const canEdit = d.editable;
   const dxfUrl = dxfPublicUrl(d.dxf_url);
   const savedQuad = useMemo(() => referenceCorners(d.dimensions), [d.dimensions]);
 
@@ -110,6 +119,13 @@ export function LabelEditor({
 
   // ---- rows (merge saved labels onto parsed pockets) -----------------------
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [nickname, setNickname] = useState(d.nickname ?? "");
+  // Latest state for the serialized saver (avoids stale closures).
+  const rowsRef = useRef<Row[] | null>(null);
+  const nicknameRef = useRef(nickname);
+  rowsRef.current = rows;
+  nicknameRef.current = nickname;
+
   useEffect(() => {
     if (!pocketSet) return;
     const saved = new Map(data.labels.map((l) => [l.pocket_key, l]));
@@ -124,7 +140,6 @@ export function LabelEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pocketSet]);
 
-  const canEdit = !d.locked && (d.stage_sort ?? 0) >= 40;
   const designChanged = useMemo(
     () =>
       data.labels.some(
@@ -133,42 +148,56 @@ export function LabelEditor({
     [data.labels, d.dxf_revision],
   );
 
-  // ---- autosave ------------------------------------------------------------
+  // ---- autosave (debounced + serialized + sequenced) -----------------------
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueSave = useCallback(
-    (next: Row[]) => {
-      if (!canEdit) return;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      setSaveState("saving");
-      saveTimer.current = setTimeout(async () => {
-        const supabase = createClient();
-        const { error } = await supabase.rpc("save_drawer_labels", {
-          p_drawer_id: d.id,
-          p_rows: next.map((r) => ({
-            pocket_key: r.key,
-            pocket_index: r.index,
-            label_text: r.na ? null : r.text,
-            na: r.na,
-          })),
-        });
-        setSaveState(error ? "error" : "saved");
-      }, 900);
-    },
-    [canEdit, d.id],
-  );
-  const updateRow = (key: string, patch: Partial<Row>) => {
-    setRows((prev) => {
-      if (!prev) return prev;
-      const next = prev.map((r) => (r.key === key ? { ...r, ...patch } : r));
-      queueSave(next);
-      return next;
+  // Chain guarantees at most one request in flight and in issue order; the
+  // sequence number keeps a superseded request from reporting its status.
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const saveSeq = useRef(0);
+
+  const performSave = useCallback(async (): Promise<{ error: { message?: string } | null }> => {
+    const current = rowsRef.current;
+    if (!current) return { error: null };
+    const seq = ++saveSeq.current;
+    let result: { error: { message?: string } | null } = { error: null };
+    const run = saveChain.current.then(async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("save_drawer_labels", {
+        p_drawer_id: d.id,
+        p_rows: current.map((r) => ({
+          pocket_key: r.key,
+          pocket_index: r.index,
+          label_text: r.na ? null : r.text,
+          na: r.na,
+        })),
+        p_dxf_revision: d.dxf_revision,
+        p_nickname: nicknameRef.current.trim() || null,
+      });
+      result = { error: error ?? null };
+      if (seq === saveSeq.current) setSaveState(error ? "error" : "saved");
     });
+    saveChain.current = run.catch(() => undefined);
+    await run;
+    return result;
+  }, [d.id, d.dxf_revision]);
+
+  const queueSave = useCallback(() => {
+    if (!canEdit) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveState("saving");
+    saveTimer.current = setTimeout(() => {
+      void performSave();
+    }, 900);
+  }, [canEdit, performSave]);
+
+  const updateRow = (key: string, patch: Partial<Row>) => {
+    setRows((prev) => (prev ? prev.map((r) => (r.key === key ? { ...r, ...patch } : r)) : prev));
+    queueSave();
   };
 
   // ---- submit --------------------------------------------------------------
   const [name, setName] = useState(defaultName ?? d.labels_submitted_by ?? "");
-  const [nickname, setNickname] = useState(d.nickname ?? "");
   const [submitState, setSubmitState] = useState<"idle" | "busy" | "done">(
     d.labels_submitted_at ? "done" : "idle",
   );
@@ -184,24 +213,21 @@ export function LabelEditor({
       return;
     }
     setSubmitState("busy");
-    const supabase = createClient();
-    // Flush any pending draft synchronously before submitting.
+    // Flush the pending draft first — and abort if that write fails, so the
+    // submit can never stamp approval over rows older than the screen.
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    if (rows) {
-      await supabase.rpc("save_drawer_labels", {
-        p_drawer_id: d.id,
-        p_rows: rows.map((r) => ({
-          pocket_key: r.key,
-          pocket_index: r.index,
-          label_text: r.na ? null : r.text,
-          na: r.na,
-        })),
-      });
+    const flushed = await performSave();
+    if (flushed.error) {
+      setSubmitState("idle");
+      setError(flushed.error.message || "Couldn't save your labels — please try again.");
+      return;
     }
+    const supabase = createClient();
     const { error: e } = await supabase.rpc("submit_drawer_labels", {
       p_drawer_id: d.id,
       p_name: name.trim(),
       p_nickname: nickname.trim() || null,
+      p_expected_count: total,
     });
     if (e) {
       setSubmitState("idle");
@@ -222,13 +248,17 @@ export function LabelEditor({
     setTimeout(() => input?.focus({ preventScroll: true }), 250);
   };
 
-  // ---- align mode (staff, no corners saved) --------------------------------
+  // ---- align mode (staff: backfill legacy drawers, or re-align) ------------
   const [alignQuad, setAlignQuad] = useState<CornerQuad>(DEFAULT_QUAD);
   const [aligning, setAligning] = useState(false);
   const [alignBusy, setAlignBusy] = useState(false);
   const photoBoxRef = useRef<HTMLDivElement>(null);
   const dragIdx = useRef<number | null>(null);
 
+  const startAligning = () => {
+    setAlignQuad(savedQuad ?? DEFAULT_QUAD);
+    setAligning(true);
+  };
   const onAlignPointer = (e: React.PointerEvent) => {
     if (dragIdx.current === null) return;
     const box = photoBoxRef.current?.getBoundingClientRect();
@@ -256,11 +286,19 @@ export function LabelEditor({
   }
 
   // ---- render helpers ------------------------------------------------------
-  const quad = savedQuad ?? (aligning ? alignQuad : null);
+  // While aligning, the draft quad wins so staff see the outlines follow.
+  const quad = aligning ? alignQuad : savedQuad;
 
   // Natural photo pixel size — the overlay draws in image-pixel space so
-  // circles and text keep their aspect on non-square photos.
+  // circles and text keep their aspect on non-square photos. The ref callback
+  // handles cache hits where `load` fires before hydration and onLoad never
+  // runs; onLoad stays as the fallback for normal loads.
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  const readNat = useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth && img.naturalHeight) {
+      setNat({ w: img.naturalWidth, h: img.naturalHeight });
+    }
+  }, []);
   const badgeR = nat ? Math.max(10, Math.min(nat.w, nat.h) * 0.018) : 12;
 
   function overlayPath(points: [number, number][], q: CornerQuad): string {
@@ -301,9 +339,20 @@ export function LabelEditor({
             <g
               key={p.key}
               className={`lbl-pocket${hot === p.key ? " lbl-pocket--hot" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Pocket ${p.index}`}
               onMouseEnter={() => setHot(p.key)}
               onMouseLeave={() => setHot(null)}
+              onFocus={() => setHot(p.key)}
+              onBlur={() => setHot(null)}
               onClick={() => jumpTo(p.key)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  jumpTo(p.key);
+                }
+              }}
             >
               <path
                 d={p.points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${-y}`).join("") + "Z"}
@@ -325,6 +374,7 @@ export function LabelEditor({
 
   const showOverlay = dxfState === "ready" && !!quad && !!d.photo_url;
   const showAlignPrompt = d.is_staff && !savedQuad && dxfState === "ready" && !!d.photo_url;
+  const showRealign = d.is_staff && !!savedQuad && dxfState === "ready" && !!d.photo_url && !aligning;
 
   return (
     <div className="lbl-layout">
@@ -339,14 +389,11 @@ export function LabelEditor({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              ref={readNat}
               className="lbl-photo"
               src={d.photo_url}
               alt={`Top-down photo of ${d.nickname || "your drawer"}`}
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth && img.naturalHeight)
-                  setNat({ w: img.naturalWidth, h: img.naturalHeight });
-              }}
+              onLoad={(e) => readNat(e.currentTarget)}
             />
             {(showOverlay || aligning) && pocketSet && quad && nat ? (
               <svg className="lbl-overlay" viewBox={`0 0 ${nat.w} ${nat.h}`} preserveAspectRatio="none">
@@ -358,9 +405,20 @@ export function LabelEditor({
                     <g
                       key={p.key}
                       className={`lbl-pocket${hot === p.key ? " lbl-pocket--hot" : ""}`}
+                      role={aligning ? undefined : "button"}
+                      tabIndex={aligning ? undefined : 0}
+                      aria-label={`Pocket ${p.index}`}
                       onMouseEnter={() => setHot(p.key)}
                       onMouseLeave={() => setHot(null)}
+                      onFocus={() => setHot(p.key)}
+                      onBlur={() => setHot(null)}
                       onClick={() => (aligning ? undefined : jumpTo(p.key))}
+                      onKeyDown={(e) => {
+                        if (!aligning && (e.key === "Enter" || e.key === " ")) {
+                          e.preventDefault();
+                          jumpTo(p.key);
+                        }
+                      }}
                     >
                       <path
                         d={overlayPath(p.points, quad)}
@@ -441,10 +499,16 @@ export function LabelEditor({
               <b>Staff:</b> this drawer predates corner capture, so the outlines can&apos;t be placed on the photo yet.
               Align it once and every visit after gets the overlay.
             </p>
-            <button className="btn btn--primary btn--sm" onClick={() => setAligning(true)}>
+            <button className="btn btn--primary btn--sm" onClick={startAligning}>
               Align outlines to photo
             </button>
           </div>
+        ) : showRealign ? (
+          <p style={{ margin: "0.7rem 0 0" }}>
+            <button className="btn btn--ghost btn--sm" onClick={startAligning}>
+              Re-align outlines (staff)
+            </button>
+          </p>
         ) : null}
 
         {!savedQuad && !d.is_staff && dxfState === "ready" ? (
@@ -469,7 +533,7 @@ export function LabelEditor({
           </p>
         ) : null}
 
-        {showOverlay ? (
+        {showOverlay && !aligning ? (
           <p className="muted" style={{ fontSize: "0.82rem", margin: "0.7rem 0 0" }}>
             This is the flat, top-down view from your scan — outlines sit where each pocket will be cut. Click a pocket
             to jump to its entry.
@@ -481,7 +545,9 @@ export function LabelEditor({
       <section className="card">
         {d.locked ? (
           <p className="badge badge--pending" style={{ display: "inline-block", marginBottom: "0.8rem" }}>
-            In production — labels are locked
+            {d.stage === "in_production" || (d.stage_sort ?? 0) >= 80
+              ? "In production — labels are locked"
+              : "Labels are locked for this drawer"}
           </p>
         ) : null}
         {designChanged && canEdit ? (
@@ -498,8 +564,12 @@ export function LabelEditor({
             id="drawerName"
             type="text"
             value={nickname}
+            maxLength={MAX_TEXT}
             disabled={!canEdit}
-            onChange={(e) => setNickname(e.target.value)}
+            onChange={(e) => {
+              setNickname(e.target.value);
+              queueSave();
+            }}
           />
         </div>
 
@@ -543,6 +613,7 @@ export function LabelEditor({
                     <input
                       type="text"
                       value={r.text}
+                      maxLength={MAX_TEXT}
                       placeholder={r.na ? "No label" : "Label for this pocket"}
                       disabled={!canEdit || r.na}
                       aria-label={`Label for pocket ${r.index}`}
@@ -576,6 +647,7 @@ export function LabelEditor({
                     id="signName"
                     type="text"
                     autoComplete="name"
+                    maxLength={200}
                     placeholder="e.g. Jordan Smith"
                     value={name}
                     onChange={(e) => setName(e.target.value)}

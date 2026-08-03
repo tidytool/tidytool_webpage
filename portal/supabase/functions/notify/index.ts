@@ -56,7 +56,7 @@ function render(p: Payload): { subject: string; html: string } {
         ? {
             subject: `Labels submitted — ${p.nickname?.trim() || p.drawer_id}`,
             heading: "A customer submitted tool labels",
-            intro: `${name} submitted labels for <strong>${drawer}</strong>${p.note?.trim() ? "" : "."} Review them before export.`,
+            intro: `${name} submitted labels for <strong>${drawer}</strong>. Review them before export.`,
             cta: "Open the label sheet",
             ctaUrl: `https://app.thetidytool.com/labels/${encodeURIComponent(p.drawer_id)}`,
             footer: "Internal notification — the customer was not emailed.",

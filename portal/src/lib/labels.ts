@@ -170,9 +170,18 @@ export function extractPockets(dxf: string): PocketSet | null {
     (e) => e.type === "TEXT" && e.layer === "Labels" && e.text && e.x !== undefined,
   );
 
-  // Candidate pockets: outline polylines + circles.
+  // Candidate pockets: outline polylines + circles. Keys must be unique — a
+  // duplicated key would corrupt the (drawer_id, pocket_key) upsert — so a
+  // repeated/missing entity handle gets a positional suffix.
   type Cand = { key: string; points: [number, number][]; cx: number; cy: number; r?: number; x?: number; y?: number };
   const cands: Cand[] = [];
+  const usedKeys = new Set<string>();
+  const uniqueKey = (base: string) => {
+    let k = base;
+    for (let i = 2; usedKeys.has(k); i++) k = `${base}-${i}`;
+    usedKeys.add(k);
+    return k;
+  };
   for (const o of outlines) {
     let cx = 0;
     let cy = 0;
@@ -180,11 +189,11 @@ export function extractPockets(dxf: string): PocketSet | null {
       cx += x;
       cy += y;
     }
-    cands.push({ key: o.handle || `poly-${cands.length}`, points: o.pts, cx: cx / o.pts.length, cy: cy / o.pts.length });
+    cands.push({ key: uniqueKey(o.handle || `poly-${cands.length}`), points: o.pts, cx: cx / o.pts.length, cy: cy / o.pts.length });
   }
   for (const c of circles) {
     cands.push({
-      key: c.handle || `circle-${cands.length}`,
+      key: uniqueKey(c.handle || `circle-${cands.length}`),
       points: circlePoints(c.x as number, c.y as number, c.r as number),
       cx: c.x as number,
       cy: c.y as number,
