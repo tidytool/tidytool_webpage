@@ -345,6 +345,38 @@ dialog.modal::backdrop { background: rgba(16, 24, 32, 0.45); }
 .modal__x:hover { background: var(--c-accent); color: #fff; }
 .modal__body { padding: 1.1rem 1.25rem 1.25rem; overflow: auto; }
 
+/* Order quick-view popup (OrderQuickView.tsx) — double-click a row in the
+   admin orders list. Large per-drawer photos + an on-demand 3D scan viewer. */
+.qv__drawer {
+  padding: 0.9rem; background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+}
+.qv__photo {
+  display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: 8px; background: var(--c-surface-2); margin-bottom: 0.7rem;
+}
+.qv__photo--empty {
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--c-border); color: var(--c-text-dim);
+  font-size: 0.85rem; font-weight: 600;
+}
+.qv__drawer-head { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.qv__links {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  margin: 0.55rem 0 0; font-size: 0.88rem;
+}
+.qv__viewer {
+  position: relative; width: 100%; aspect-ratio: 4 / 3; margin-top: 0.7rem;
+  border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden;
+  background: var(--c-bg);
+}
+.qv__viewer canvas { display: block; width: 100% !important; height: 100% !important; }
+.qv__viewer-hint {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; color: var(--c-text-dim); font-size: 0.85rem;
+  font-weight: 600;
+}
+
 @media (max-width: 720px) {
   .order-head__actions { width: 100%; }
   .order-head__actions > * { flex: 1 1 auto; }
