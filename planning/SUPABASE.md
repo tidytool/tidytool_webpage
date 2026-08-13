@@ -15,6 +15,9 @@ copies of these rules. Last updated 2026-08-13.
 
 Notes on dev:
 
+- **Dev is for employees only** (policy 2026-08-13). Customers never get a
+  preview URL, a `?env=dev` link, or a dev login; the only customer-facing
+  surfaces are `app.thetidytool.com` and thetidytool.com, on prod.
 - Dev **auth users are separate** from prod, seeded by hand.
   `shem@thetidytool.com` exists on dev with admin+staff roles. Redirect
   allowlist covers localhost and the Vercel preview wildcards (set 2026-08-13).

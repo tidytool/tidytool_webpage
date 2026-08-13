@@ -28,6 +28,22 @@ need dashboard/DNS access; nothing here changes code.
       branch "dev" → Settings → API Keys)
   - Dev-branch auth redirect allowlist is already configured (2026-08-13):
     localhost + the Vercel preview wildcards.
+  - **[Sam] PENDING (2026-08-13):** the Preview-scope values above are not yet
+    set — until they are, previews still point at prod. Setting them is the
+    only step left to turn on the dev environment.
+  - **Policy:** dev (previews + the dev DB) is for **employees only** — never
+    hand a preview URL or dev login to a customer. Customers only ever see
+    `app.thetidytool.com`.
+
+## Commercial-launch checklist (before the first paying customer)
+
+- **Upgrade Vercel to Pro.** The free Hobby plan is licensed for personal,
+  non-commercial use; a commercial customer portal needs Pro (~$20/mo). The
+  empty "Manifest Systems" team on Shem's Vercel account is a natural home if
+  we also want to move off a personal account then (project transfer keeps
+  domains/deploys); until that day, keep that team empty so it never bills.
+- Marketing site: the planned Cloudflare Pages migration (README) also settles
+  GitHub Pages' non-commercial-hosting clause for `docs/`.
 - Deploy `main` and confirm the build passes and `/login` renders.
 
 ## 2. Domain **[Sam]**
