@@ -422,6 +422,10 @@ export type WorkQueueRow = {
   customer_name: string | null;
   order_status: string | null;
   order_state: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  claimed_by_email: string | null;
+  order_location: string | null;
 };
 
 /** Shape of get_status_pipeline(p_days) — the admin pipeline rollup. */
