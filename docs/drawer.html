@@ -71,10 +71,24 @@
   </main>
 
   <script>
-    // --- Supabase REST config (anon / publishable key; read-only, RLS-guarded) ---
-    var SUPABASE_URL = 'https://tkrrvpoupekrjqditupi.supabase.co';
-    // Public anon key — safe to ship in page source; read access is bounded by RLS.
-    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrcnJ2cG91cGVrcmpxZGl0dXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0OTk1NTIsImV4cCI6MjA2OTA3NTU1Mn0.u9EOKNXOM9ektWTwwL-zjlgE4N4SsRv1V6xv7k68gtQ';
+    // --- Supabase REST config (anon / publishable keys; read-only, RLS-guarded) ---
+    // Keys are public — safe to ship in page source; access is bounded by RLS.
+    // ?env=dev targets the dev database for testing (planning/SUPABASE.md); default prod.
+    var TT_ENVS = {
+      prod: { url: 'https://tkrrvpoupekrjqditupi.supabase.co',
+              key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrcnJ2cG91cGVrcmpxZGl0dXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0OTk1NTIsImV4cCI6MjA2OTA3NTU1Mn0.u9EOKNXOM9ektWTwwL-zjlgE4N4SsRv1V6xv7k68gtQ' },
+      dev:  { url: 'https://gfkrebuioszsxanjdnsx.supabase.co',
+              key: 'sb_publishable_mNYeuBuPF6KMI6Z1JTgw3g_BXtugiya' }
+    };
+    var TT_ENV = new URLSearchParams(window.location.search).get('env') === 'dev' ? 'dev' : 'prod';
+    var SUPABASE_URL = TT_ENVS[TT_ENV].url;
+    var SUPABASE_KEY = TT_ENVS[TT_ENV].key;
+    if (TT_ENV === 'dev') {
+      var ttDevBadge = document.createElement('div');
+      ttDevBadge.textContent = 'DEV';
+      ttDevBadge.style.cssText = 'position:fixed;top:0;left:0;z-index:9999;background:#2e7d32;color:#fff;font:700 12px/1 sans-serif;padding:4px 10px;border-bottom-right-radius:6px;';
+      document.body.appendChild(ttDevBadge);
+    }
 
     // Human-friendly labels for the drawer status enum.
     var STATUS_LABELS = {

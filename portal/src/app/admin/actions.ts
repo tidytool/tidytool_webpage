@@ -370,7 +370,11 @@ async function requireAdmin(): Promise<string | null> {
 }
 
 function portalRedirectTo(): string {
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.thetidytool.com";
+  // Preview/dev deploys must never send invite links pointing at prod, so the
+  // hardcoded domain is the last resort, after Vercel's per-deploy URL.
+  const site =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://app.thetidytool.com");
   return `${site}/auth/confirm?next=/set-password`;
 }
 

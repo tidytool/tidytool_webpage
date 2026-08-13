@@ -8,12 +8,26 @@ need dashboard/DNS access; nothing here changes code.
 
 - Project → Settings → General: **Root Directory = `portal`**, Framework Preset = Next.js
   (already set per the rebuild commit — verify).
-- Settings → Environment Variables (Production + Preview):
-  - `NEXT_PUBLIC_SUPABASE_URL` = `https://tkrrvpoupekrjqditupi.supabase.co`
-  - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = the `sb_publishable_...` key
-    (Supabase → Settings → API Keys). Preferred over the legacy anon JWT.
-  - `NEXT_PUBLIC_SITE_URL` = `https://app.thetidytool.com` (Production only;
-    leave unset or per-branch for previews).
+- Settings → Environment Variables — **Production and Preview point at different
+  databases** (decision 2026-08-13, see `planning/SUPABASE.md`): Production = the
+  live DB; every Preview (any non-main branch) = the persistent dev branch, so no
+  preview build can ever touch prod data.
+  - **Production scope:**
+    - `NEXT_PUBLIC_SUPABASE_URL` = `https://tkrrvpoupekrjqditupi.supabase.co`
+    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = prod `sb_publishable_...` key
+      (Supabase → Settings → API Keys). Preferred over the legacy anon JWT.
+    - `NEXT_PUBLIC_SITE_URL` = `https://app.thetidytool.com`
+    - `SUPABASE_SECRET_KEY` = prod `sb_secret_...` key
+  - **Preview scope:**
+    - `NEXT_PUBLIC_SUPABASE_URL` = `https://gfkrebuioszsxanjdnsx.supabase.co`
+    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` =
+      `sb_publishable_mNYeuBuPF6KMI6Z1JTgw3g_BXtugiya` (dev; public by design)
+    - `NEXT_PUBLIC_SITE_URL` = leave **unset** — the code falls back to the
+      per-deploy `VERCEL_URL`, so invite links land on the preview itself.
+    - `SUPABASE_SECRET_KEY` = dev branch `sb_secret_...` key (Supabase →
+      branch "dev" → Settings → API Keys)
+  - Dev-branch auth redirect allowlist is already configured (2026-08-13):
+    localhost + the Vercel preview wildcards.
 - Deploy `main` and confirm the build passes and `/login` renders.
 
 ## 2. Domain **[Sam]**
