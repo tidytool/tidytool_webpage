@@ -80,7 +80,12 @@
       dev:  { url: 'https://gfkrebuioszsxanjdnsx.supabase.co',
               key: 'sb_publishable_mNYeuBuPF6KMI6Z1JTgw3g_BXtugiya' }
     };
-    var TT_ENV = new URLSearchParams(window.location.search).get('env') === 'dev' ? 'dev' : 'prod';
+    // Employees only: ?env=dev also requires a one-time opt-in in this browser
+    // (run `localStorage.tt_dev = '1'` in the console once), so a shared
+    // ?env=dev link keeps customers on prod.
+    var TT_DEV_OPTED = false;
+    try { TT_DEV_OPTED = localStorage.getItem('tt_dev') === '1'; } catch (e) {}
+    var TT_ENV = TT_DEV_OPTED && new URLSearchParams(window.location.search).get('env') === 'dev' ? 'dev' : 'prod';
     var SUPABASE_URL = TT_ENVS[TT_ENV].url;
     var SUPABASE_KEY = TT_ENVS[TT_ENV].key;
     if (TT_ENV === 'dev') {
@@ -112,9 +117,10 @@
       if (!dim) return null;
       try { if (typeof dim === 'string') dim = JSON.parse(dim); } catch (e) { return null; }
       if (typeof dim !== 'object') return null;
+      var u = dim.units ? ' ' + dim.units : '';
       var pick = function (k) { return dim[k] != null ? dim[k] : null; };
       var w = pick('width'), l = pick('length') != null ? pick('length') : pick('depth') != null ? pick('depth') : pick('height');
-      if (w != null && l != null) return w + ' × ' + l;
+      if (w != null && l != null) return w + ' × ' + l + u;
       var parts = Object.keys(dim).map(function (k) { return k + ': ' + dim[k]; });
       return parts.length ? parts.join(' · ') : null;
     }
@@ -155,7 +161,7 @@
 
       // Read via a SECURITY DEFINER RPC that returns only public-safe fields.
       // (The drawer table no longer allows blanket anon SELECT — see
-      //  portal/supabase/migrations/0002_harden_anon_reads.sql.)
+      //  portal/supabase/migrations/20260703160834_harden_anon_reads.sql.)
       fetch(SUPABASE_URL + '/rest/v1/rpc/get_public_drawer', {
         method: 'POST',
         headers: {
