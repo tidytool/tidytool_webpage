@@ -157,6 +157,11 @@ p  { margin: 0 0 1rem; }
   border: 2px dashed var(--c-border); border-radius: 10px; color: var(--c-text-dim);
   padding: 2rem;
 }
+.form-fallback {
+  text-align: center; font-size: .92rem; color: var(--c-text-dim);
+  margin: 0 0 .75rem;
+}
+.form-fallback a { color: var(--c-accent); font-weight: 600; }
 .checklist { list-style: none; padding: 0; margin: 1rem 0 0; }
 .checklist li { position: relative; padding-left: 1.8rem; margin-bottom: .6rem; color: var(--c-text-dim); }
 .checklist li::before {
