@@ -59,7 +59,7 @@ Notes on dev:
    verifies the md5.
 4. **Integration-test against dev** from the clients that care (iPad dev
    build, Vercel preview, `?env=dev` pages).
-5. **Apply to prod** — gated on Sam's explicit approval, no exceptions:
+5. **Apply to prod** — gated on explicit approval from Sam or Shem, no exceptions:
    `tools/db_apply.py <file> --env prod --approved`.
 6. **Parity check any time**: `tools/db_apply.py --check --env dev|prod`
    (version+name 1:1 is the hard contract; the tool also reports how many rows

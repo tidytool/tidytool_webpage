@@ -12,7 +12,8 @@ Usage:
   tools/db_apply.py --check --env dev            # verify local dir vs dev history
   tools/db_apply.py <file.sql> --env dev         # apply one migration to dev
   tools/db_apply.py <file.sql> --env prod --approved
-                                                 # prod requires Sam's approval flag
+                                                 # prod requires the approval flag
+                                                 # (sign-off from Sam or Shem)
   tools/db_apply.py <file.sql> --env prod --approved --reload-postgrest
                                                  # apply + refresh PostgREST schema cache
   tools/db_apply.py --reload-postgrest --env prod
@@ -159,7 +160,7 @@ def apply(path, env, approved, tok):
         header = "\n".join(l for l in content.splitlines()[:40] if l.startswith("--"))
         print(f"=== PROD APPLY: {fn} ===\n{header}\n")
         if not approved:
-            sys.exit("Refusing: applying to PROD requires Sam's explicit approval (--approved).")
+            sys.exit("Refusing: applying to PROD requires explicit approval from Sam or Shem (--approved).")
 
     if version in remote_migrations(ref, tok):
         sys.exit(f"{version} is already in {env}'s history. Nothing to do.")

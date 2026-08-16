@@ -3,7 +3,8 @@
 Best practices for keeping the public surfaces safe from abuse, tailored to
 this stack (static docs/ + Tally + Supabase + Next.js portal). Companion to
 `planning/SUPABASE.md` (environments/migrations) — this file is about hostile
-traffic. Last audited 2026-08-15 against prod's live Auth config.
+traffic. Last audited 2026-08-15 against prod's live Auth config; audit
+findings implemented same day (see status below).
 
 ## Threat model — what abuse looks like here
 
@@ -30,37 +31,36 @@ UUIDs) are the auth model for public pages — their secrecy matters.
 - **Secrets hygiene** — publishable keys only in page source; secret keys never
   committed (see SUPABASE.md).
 
-## Gaps found in the 2026-08-15 audit — recommended, needs Sam's sign-off
+## Gaps found in the 2026-08-15 audit — status
 
-Auth settings are high-risk changes per CLAUDE.md, so these are recommendations,
-not applied. In priority order:
+Found in the 2026-08-15 read-only audit of prod's Auth config; implemented
+2026-08-15 with Shem's sign-off (equal say per CLAUDE.md, agreed 2026-08-15).
 
-1. **Close open signup.** Prod currently has `disable_signup: false` **and**
-   `mailer_autoconfirm: true` — anyone can create a confirmed portal account
-   instantly, no email verification, no CAPTCHA. Bot accounts see no customer
-   data (dashboard scoping is by matching `order.customer_email`), but junk
-   accounts pollute `auth.users`, and signup emails burn our sending
-   reputation. The portal is invite-driven today, so the cheap fix is
-   **turn `disable_signup` on** (invites still work). If self-serve signup is
-   ever wanted instead: require email confirmation (`mailer_autoconfirm: false`)
-   **and** enable CAPTCHA.
-2. **Enable CAPTCHA on auth endpoints** (`security_captcha_enabled`) —
-   Supabase supports Cloudflare Turnstile (preferred — free, invisible) or
-   hCaptcha. One dashboard toggle + a small portal login-form change
-   (`@marsidev/react-turnstile` or plain widget). Do this at the latest when
-   signup opens; it also protects password reset and magic-link endpoints from
-   email-bombing a victim's inbox.
-3. **Raise password minimum from 6 to 12** — current floor is weaker than the
-   HIBP check deserves. No effect on existing passwords until changed.
-4. **Rate-limit the anon write RPC at the DB level.** Auth endpoints have
-   Supabase's limiter, but `/rest/v1/rpc/submit_drawer_approval` has none — a
-   scripted loop with a leaked drawer link could append `drawer_event` rows and
-   ping Discord until manually stopped. Cheapest robust fix, no new infra: a
-   check inside the RPC —
-   `if (count of drawer_event rows for this drawer in the last hour) >= 10 then
-   raise 'Too many submissions — please try again later.'`
-   Per-drawer, so one abused link can't be stopped by IP-hopping and can't
-   affect other customers. Same pattern for any future anon-callable write.
+1. **Close open signup — ✅ DONE** (prod + dev): `disable_signup: true`.
+   Previously anyone could create a confirmed portal account instantly
+   (`mailer_autoconfirm: true`, no CAPTCHA). Verified safe first: the portal is
+   invite-only in code (`admin.inviteUserByEmail` in
+   `portal/src/app/admin/actions.ts`; the login page "never creates a new
+   account"), and admin invites bypass the signup endpoint, so nothing breaks.
+   If self-serve signup is ever wanted: re-enable **plus** email confirmation
+   (`mailer_autoconfirm: false`) **plus** CAPTCHA (item 2) — all three together.
+2. **CAPTCHA on auth endpoints — deferred, on purpose.** With signup closed the
+   remaining exposure (password-reset / magic-link email-bombing) is bounded by
+   Supabase's 30/hr email rate limit. Revisit if signup reopens: Cloudflare
+   Turnstile (free) via `security_captcha_enabled` + a small login-form widget.
+3. **Password minimum 6 → 12 — ✅ DONE** (prod + dev). Existing passwords are
+   unaffected until next change; new invites must meet 12.
+4. **Rate-limit the anon write RPC — ✅ DONE**:
+   `20260816032818_approval_rate_limit` caps `submit_drawer_approval` at 10
+   customer submissions per drawer per rolling hour (errcode 54000, friendly
+   message). Per-drawer, so IP-hopping doesn't evade it and one abused link
+   can't affect other customers; the count runs under the drawer row lock, so
+   concurrent calls can't race past it; staff events never count toward it.
+   Tested on dev (cap trips on call 11; drawer state restored — note the 10
+   labeled "RateLimit Test" events remain on dev drawer `27885e91…` because
+   `drawer_event` is append-only by trigger, which is correct behavior).
+   Applied to prod same day, parity OK 49/49. **Reuse this pattern for any
+   future anon-callable write.**
 
 ## Standing practices for new work
 

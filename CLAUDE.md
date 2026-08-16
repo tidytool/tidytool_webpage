@@ -58,7 +58,8 @@ the repo goes private (planned alongside the Cloudflare Pages migration). Never 
    loops; don't re-architect a static site. Prefer the cheapest change that meets the goal.
 4. **Human approval scales with risk.** Most changes don't need a gate — copy, styling,
    content, docs, and additive/non-destructive code can ship without waiting for sign-off.
-   Require Sam's explicit review **only for high-risk changes**: anything touching the quote
+   Require explicit review from **Sam or Shem** (equal say, either suffices — agreed
+   2026-08-15) **only for high-risk changes**: anything touching the quote
    form or conversion path, production database migrations (schema changes, RLS, destructive
    SQL), auth, secrets/`.env`, DNS/the live domain, or deleting data. When the blast radius is
    unclear, treat it as high-risk and ask. Never auto-deploy to the live domain or run
@@ -83,7 +84,7 @@ Rather than six always-on agents, fold the roles into one ticket-driven flow:
 - **Propose (Junior Dev):** make the change on a branch; summarize what and why.
 - **Review (Senior Dev/Tester):** self-critique — check links, mobile layout, the form path,
   performance, accessibility. List anything risky.
-- **Approve (Sam):** Sam signs off on the preview before it goes live.
+- **Approve (Sam or Shem):** either signs off on the preview before it goes live.
 
 ## Definition of done for any change
 
