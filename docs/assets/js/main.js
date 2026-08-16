@@ -57,6 +57,39 @@
     });
   }
 
+  // --- Tally embed fallback ---
+  // The quote-form iframes have no src until Tally's embed.js sets it from
+  // data-tally-src. If that script is blocked (ad-blocker, strict corporate
+  // network), the card would sit blank — show a direct link instead. If the
+  // embed recovers late, remove the fallback again.
+  const tallyFrames = document.querySelectorAll("iframe[data-tally-src]");
+  if (tallyFrames.length) {
+    const tallyFormUrl = function (frame) {
+      const m = (frame.getAttribute("data-tally-src") || "").match(/tally\.so\/embed\/([A-Za-z0-9]+)/);
+      return "https://tally.so/r/" + (m ? m[1] : "LZoGyG");
+    };
+    const checkTally = function () {
+      tallyFrames.forEach(function (frame) {
+        let note = frame.parentNode.querySelector(".form-fallback");
+        if (!frame.src) {
+          if (!note) {
+            note = document.createElement("p");
+            note.className = "form-fallback";
+            note.innerHTML =
+              'Trouble loading the form? <a href="' + tallyFormUrl(frame) +
+              '" target="_blank" rel="noopener">Open it in a new tab →</a> ' +
+              'or email <a href="mailto:sam@thetidytool.com">sam@thetidytool.com</a>.';
+            frame.parentNode.insertBefore(note, frame);
+          }
+        } else if (note) {
+          note.remove();
+        }
+      });
+    };
+    setTimeout(checkTally, 4000);
+    setTimeout(checkTally, 10000);
+  }
+
   // --- Footer year ---
   const yearEl = document.querySelector("[data-year]");
   if (yearEl) yearEl.textContent = String(new Date().getFullYear());
