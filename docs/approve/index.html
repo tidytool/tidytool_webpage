@@ -324,7 +324,9 @@
     function loadHistory() {
       var box = document.getElementById('history');
       if (!box || !drawerId) return;
-      rpc('get_drawer_changelog', { p_drawer_id: drawerId })
+      // Public, link-gated changelog (customer-facing event types only) —
+      // get_drawer_changelog itself is staff-or-owner since 20260720220850.
+      rpc('get_public_drawer_changelog', { p_drawer_id: drawerId })
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (events) {
           if (!events || !events.length) { box.innerHTML = ''; return; }
