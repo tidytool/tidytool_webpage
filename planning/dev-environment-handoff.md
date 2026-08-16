@@ -12,7 +12,9 @@ found along the way. Background: `planning/SUPABASE.md` (strategy),
 - Dev auth: `shem@thetidytool.com` exists with admin+staff (prod password
   hash); redirect allowlist covers localhost + Vercel preview wildcards.
 - Portal code is env-ready; invite links use the per-deploy URL on previews.
-- docs/ approve + drawer pages take `?env=dev` (green DEV badge, default prod).
+- docs/ approve + drawer pages take `?env=dev` (green DEV badge, default prod;
+  since 2026-08-14 also needs a one-time `localStorage.tt_dev = '1'` opt-in per
+  browser — see planning/SUPABASE.md).
 - `tools/db_apply.py` applies migrations (byte-faithful history rows) and
   `--check` audits dir↔history parity. Prod checks OK 45/45.
 - Policies: **dev is employees-only** (customers never get preview URLs or dev

@@ -24,6 +24,9 @@ Notes on dev:
 - Dev deliberately lacks `pg_net`, so notification emails never fire from it.
 - End-to-end testing story: an `APP_ENV=dev` iPad build, a Vercel preview (or
   `npm run dev`), and `?env=dev` docs pages all see the same dev data.
+- `?env=dev` on docs pages additionally requires a one-time per-browser opt-in
+  (run `localStorage.tt_dev = '1'` in the console) — added 2026-08-14 so a
+  shared `?env=dev` link keeps customers on prod.
 
 ## Who owns what
 
