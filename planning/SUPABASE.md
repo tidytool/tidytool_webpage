@@ -3,7 +3,7 @@
 Canonical reference for the Supabase setup shared by **tidytool_webpage** (this
 repo — owns the schema), **tidyCAM** (iPad operator app), and **tidyCAD**
 (desktop design app). The sibling repos link here instead of keeping their own
-copies of these rules. Last updated 2026-08-13.
+copies of these rules. Last updated 2026-08-15.
 
 ## Environments
 
@@ -64,6 +64,14 @@ Notes on dev:
 6. **Parity check any time**: `tools/db_apply.py --check --env dev|prod`
    (version+name 1:1 is the hard contract; the tool also reports how many rows
    are byte-verifiable).
+7. **If the migration added or renamed a REST-exposed function**: reload
+   PostgREST's schema cache, or `/rest/v1/rpc/<fn>` 404s from the live pages —
+   `tools/db_apply.py --reload-postgrest --env prod` (also combinable with an
+   apply). It re-PATCHes the PostgREST config with its own current values,
+   which restarts it (seconds-long REST blip). `notify pgrst, 'reload schema'`
+   sent through the Management API query endpoint does **not** reach PostgREST
+   (observed 2026-08-15 applying `get_public_drawer_changelog` to prod).
+   Replacing an existing function's body needs no reload.
 
 ## Known issues / standing tickets
 
@@ -85,8 +93,9 @@ Notes on dev:
   secret-key rejection.
 - **tidyCAM's committed `supabase/schema.sql` is empty**, so its release-time
   schema diff currently has no baseline to compare against.
-- `20260813190000_order_email_change_and_reassign` is applied to **dev only**;
-  prod apply is pending Sam's approval (branch `feat/order-email-relink`).
+- ~~`20260813190000_order_email_change_and_reassign` applied to dev only~~ —
+  resolved: prod history shows it applied; parity was OK 48/48 on 2026-08-15
+  after `public_approve_changelog` + `approval_input_caps` went to prod.
 
 ## Secrets hygiene
 

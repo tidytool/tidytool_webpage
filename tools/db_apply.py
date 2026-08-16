@@ -13,6 +13,10 @@ Usage:
   tools/db_apply.py <file.sql> --env dev         # apply one migration to dev
   tools/db_apply.py <file.sql> --env prod --approved
                                                  # prod requires Sam's approval flag
+  tools/db_apply.py <file.sql> --env prod --approved --reload-postgrest
+                                                 # apply + refresh PostgREST schema cache
+  tools/db_apply.py --reload-postgrest --env prod
+                                                 # refresh the cache on its own
 
 Auth: uses $SUPABASE_ACCESS_TOKEN, else the Supabase CLI's token from the
 macOS keychain. Read-only unless applying.
@@ -108,6 +112,32 @@ def check(env, tok):
     return 0 if ok else 1
 
 
+def reload_postgrest(env, tok):
+    """Force PostgREST to reload its schema cache. A function created or renamed
+    by a migration 404s from /rest/v1/rpc/ until the cache refreshes, and
+    `notify pgrst, 'reload schema'` issued through the Management API query
+    endpoint does not reach PostgREST (observed on prod, 2026-08-15). PATCHing
+    the PostgREST config with its own current values restarts it — expect a
+    seconds-long blip on the REST API."""
+    ref = REFS[env]
+    url = f"https://api.supabase.com/v1/projects/{ref}/postgrest"
+    headers = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json",
+               "User-Agent": "tidytool-db-apply/1.0"}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as resp:
+            cfg = json.loads(resp.read())
+        body = {k: cfg[k] for k in ("db_schema", "max_rows", "db_extra_search_path")
+                if cfg.get(k) is not None}
+        req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                     headers=headers, method="PATCH")
+        with urllib.request.urlopen(req):
+            pass
+    except urllib.error.HTTPError as e:
+        sys.exit(f"PostgREST reload failed ({e.code}): {e.read().decode()[:800]}")
+    print(f"PostgREST schema cache reloading on {env} ({ref}); "
+          "REST may blip for a few seconds. New RPCs should resolve shortly.")
+
+
 def dollar_tag(content):
     for i in range(100):
         tag = f"$m{i}$"
@@ -147,6 +177,10 @@ values ('{version}', '{name}', array[{tag}{content}{tag}]);
     if got[1] != want:
         sys.exit(f"Applied, but history md5 {got[1]} != file md5 {want} — byte parity broken, fix before proceeding.")
     print(f"Applied {fn} to {env} ({ref}). History md5 verified: {want}.")
+    if re.search(r"create\s+(or\s+replace\s+)?function", content, re.IGNORECASE):
+        print("Note: if this migration ADDED or RENAMED a REST-exposed function, the live "
+              "site 404s it until PostgREST reloads its schema cache — run with "
+              "--reload-postgrest (replacing an existing function needs no reload).")
 
 
 def main():
@@ -155,13 +189,19 @@ def main():
     p.add_argument("--env", required=True, choices=["dev", "prod"])
     p.add_argument("--check", action="store_true", help="verify local dir vs environment history")
     p.add_argument("--approved", action="store_true", help="required for --env prod applies")
+    p.add_argument("--reload-postgrest", action="store_true",
+                   help="refresh PostgREST's schema cache (needed after adding/renaming a "
+                        "REST-exposed function; causes a seconds-long REST blip)")
     a = p.parse_args()
     tok = token()
     if a.check:
         sys.exit(check(a.env, tok))
-    if not a.file:
-        p.error("provide a migration file, or use --check")
-    apply(a.file, a.env, a.approved, tok)
+    if not a.file and not a.reload_postgrest:
+        p.error("provide a migration file, or use --check / --reload-postgrest")
+    if a.file:
+        apply(a.file, a.env, a.approved, tok)
+    if a.reload_postgrest:
+        reload_postgrest(a.env, tok)
 
 
 if __name__ == "__main__":
