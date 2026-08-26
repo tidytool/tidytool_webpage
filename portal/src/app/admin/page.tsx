@@ -72,6 +72,9 @@ export default async function AdminPage() {
       ) : null}
 
       <section style={{ marginTop: "1.5rem" }}>
+        {pipelineRes.error ? (
+          <p className="banner--err" role="alert">{pipelineRes.error.message}</p>
+        ) : null}
         <details className="reveal">
           <summary>All drawers ({pipeline.length})</summary>
           <div style={{ marginTop: "0.7rem" }}>

@@ -219,8 +219,7 @@ export function EmployeesList({ users }: { users: AdminUserRow[] }) {
         {confirming ? (
           <div
             style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.7rem" }}
-            role="alertdialog"
-            aria-label="Confirm adding employee"
+            aria-live="polite"
           >
             <span style={{ fontSize: "0.9rem" }}>
               Add <strong>{addr}</strong> as an employee?

@@ -232,8 +232,10 @@ export default async function DashboardPage() {
     supabase.rpc("get_my_label_status"),
   ]);
   const drawers = (data ?? []) as MyDrawer[];
-  // Staff get the header link into the (read-only) admin views too.
-  const isAdmin = adminRes.data === true || staffRes.data === true;
+  // Staff get the header link into the (read-only) admin views too. NOTE:
+  // this flag means "may open /admin", NOT "is an admin" — don't key
+  // admin-only dashboard UI off it.
+  const canSeeAdmin = adminRes.data === true || staffRes.data === true;
   const labels = new Map<string, MyLabelStatus>(
     ((labelRes.error ? [] : labelRes.data ?? []) as MyLabelStatus[]).map((l) => [
       l.drawer_id,
@@ -277,7 +279,7 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <Header email={email} isAdmin={isAdmin} />
+      <Header email={email} isAdmin={canSeeAdmin} />
       <main className="wrap">
         <p className="eyebrow">Customer portal</p>
         <h1>Your orders</h1>
