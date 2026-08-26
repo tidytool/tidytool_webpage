@@ -30,7 +30,13 @@ export default async function AdminOrdersPage({
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const { data: custData } = await supabase.rpc("get_admin_customers");
+  const { data: adminData } = await supabase.rpc("is_admin");
+  const isAdmin = adminData === true;
+  // Customers feed the org filter, bulk assign, and manual entry — all
+  // admin-only surfaces, so staff skips the fetch entirely.
+  const { data: custData } = isAdmin
+    ? await supabase.rpc("get_admin_customers")
+    : { data: null };
   const customers = (custData ?? []) as AdminCustomer[];
   const orgs = Array.from(
     new Map(
@@ -82,15 +88,17 @@ export default async function AdminOrdersPage({
           <span>Customer email</span>
           <input name="email" defaultValue={sp.email ?? ""} placeholder="name@company.com" />
         </label>
-        <label className="ctrl" style={{ flex: "1 1 160px" }}>
-          <span>Organization</span>
-          <select name="org" defaultValue={sp.org ?? ""}>
-            <option value="">Any</option>
-            {orgs.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </select>
-        </label>
+        {isAdmin ? (
+          <label className="ctrl" style={{ flex: "1 1 160px" }}>
+            <span>Organization</span>
+            <select name="org" defaultValue={sp.org ?? ""}>
+              <option value="">Any</option>
+              {orgs.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="ctrl">
           <span>From</span>
           <input type="date" name="from" defaultValue={sp.from ?? ""} />
@@ -119,6 +127,7 @@ export default async function AdminOrdersPage({
         </div>
       ) : null}
 
+      {isAdmin ? (
       <details className="reveal" style={{ marginTop: "1.1rem" }}>
         <summary>New order (manual entry)</summary>
         <form action={createOrderAction} className="card" style={{ marginTop: "0.6rem", display: "grid", gap: "0.7rem", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
@@ -171,8 +180,9 @@ export default async function AdminOrdersPage({
           </div>
         </form>
       </details>
+      ) : null}
 
-      <OrdersTable orders={orders} customers={customers} />
+      <OrdersTable orders={orders} customers={customers} readOnly={!isAdmin} />
     </main>
   );
 }

@@ -1,15 +1,15 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminUserRow } from "@/lib/types";
-import {
-  grantStaffRole,
-  revokeStaffRole,
-  inviteEmployeeAndGrantStaff,
-} from "@/app/admin/actions";
+import { addEmployee, grantStaffRole, revokeStaffRole } from "@/app/admin/actions";
 
 const GRID = "minmax(200px, 2fr) minmax(120px, 1fr) 6.5rem 6.5rem 8.5rem";
+
+/** Mirrors the server-side check so the button only lights up for a sendable
+ *  address; the server action re-validates regardless. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -29,8 +29,10 @@ function defaultSort(a: AdminUserRow, b: AdminUserRow): number {
   return b.created_at.localeCompare(a.created_at);
 }
 
-/** One grant/revoke button per row. Admins get a disabled control with a
- *  tooltip — the RPC can't touch 'admin', and they already have staff powers. */
+/** One grant/revoke control per row. Revoking asks for an inline confirm —
+ *  a second click on the same row — instead of a blocking window.confirm.
+ *  Admins get a disabled control with a tooltip: the RPC can't touch 'admin',
+ *  and they already have staff powers. */
 function StaffToggle({
   user,
   onDone,
@@ -42,6 +44,7 @@ function StaffToggle({
 }) {
   const router = useRouter();
   const [busy, startBusy] = useTransition();
+  const [armed, setArmed] = useState(false);
   const isAdmin = user.roles.includes("admin");
   const isStaff = user.roles.includes("staff");
 
@@ -59,24 +62,16 @@ function StaffToggle({
   }
 
   const run = () => {
-    if (
-      isStaff &&
-      !window.confirm(
-        `Revoke staff from ${user.email}?\n\n` +
-          `They immediately lose access to the tidyCAD work queue.`,
-      )
-    ) {
-      return;
-    }
     startBusy(async () => {
       const res = isStaff
         ? await revokeStaffRole(user.email)
         : await grantStaffRole(user.email);
+      setArmed(false);
       if (res.error) onError(res.error);
       else {
         onDone(
           isStaff
-            ? `Staff revoked from ${user.email}.`
+            ? `Staff revoked from ${user.email} — their work-queue access is gone as of now.`
             : `Staff granted to ${user.email}.`,
         );
         router.refresh();
@@ -84,19 +79,43 @@ function StaffToggle({
     });
   };
 
+  // Revoke is destructive-ish: arm on the first click, run on the second.
+  if (isStaff && armed && !busy) {
+    return (
+      <span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          className="btn btn--sm btn--danger"
+          onClick={run}
+          title={`Revoke staff from ${user.email}. They immediately lose the tidyCAD work queue.`}
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="btn btn--sm btn--ghost"
+          onClick={() => setArmed(false)}
+          aria-label="Cancel revoking staff"
+        >
+          ✕
+        </button>
+      </span>
+    );
+  }
+
   return (
     <button
       type="button"
       className={`btn btn--sm ${isStaff ? "btn--danger" : "btn--ghost"}`}
       disabled={busy}
-      onClick={run}
+      onClick={() => (isStaff ? setArmed(true) : run())}
     >
       {busy ? "Saving…" : isStaff ? "Revoke staff" : "Grant staff"}
     </button>
   );
 }
 
-/** Employees table: search, staff-only filter, grant/revoke, grant-by-email. */
+/** Employees table: add-employee card, search, staff-only filter, grant/revoke. */
 export function EmployeesList({ users }: { users: AdminUserRow[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -104,10 +123,18 @@ export function EmployeesList({ users }: { users: AdminUserRow[] }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Grant-by-email card
-  const [grantEmail, setGrantEmail] = useState("");
-  const [noAccount, setNoAccount] = useState<string | null>(null);
+  // Add-employee card
+  const [addEmail, setAddEmail] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const [busy, startBusy] = useTransition();
+
+  // Success notices announce themselves and get out of the way; errors stay
+  // until the next action resolves them.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const onDone = (msg: string) => {
     setError(null);
@@ -128,82 +155,86 @@ export function EmployeesList({ users }: { users: AdminUserRow[] }) {
 
   const staffCount = users.filter((u) => u.roles.length > 0).length;
 
-  const runGrantByEmail = () => {
-    const addr = grantEmail.trim().toLowerCase();
-    if (!addr) return;
-    setNotice(null);
-    setError(null);
-    setNoAccount(null);
-    startBusy(async () => {
-      const res = await grantStaffRole(addr);
-      if (res.error) {
-        // "no auth user with that email" → they haven't signed up yet.
-        if (/no auth user/i.test(res.error)) setNoAccount(addr);
-        setError(res.error);
-      } else {
-        setGrantEmail("");
-        onDone(`Staff granted to ${addr}.`);
-        router.refresh();
-      }
-    });
-  };
+  const addr = addEmail.trim().toLowerCase();
+  const addrValid = EMAIL_RE.test(addr);
 
-  const runInvite = () => {
-    if (!noAccount) return;
+  const runAdd = () => {
+    if (!addrValid || busy) return;
     setNotice(null);
     setError(null);
     startBusy(async () => {
-      const res = await inviteEmployeeAndGrantStaff(noAccount);
-      if (res.error) setError(res.error);
-      else {
-        setNoAccount(null);
-        setGrantEmail("");
-        onDone(`Invite sent to ${noAccount} and staff granted.`);
-        router.refresh();
+      const res = await addEmployee(addr);
+      setConfirming(false);
+      if (res.error) {
+        setError(res.error);
+        return;
       }
+      setAddEmail("");
+      onDone(
+        res.invited
+          ? `Invite sent to ${addr}. They'll get an email to set a password — staff access is already in place.`
+          : `${addr} already had an account — staff access granted.`,
+      );
+      router.refresh();
     });
   };
 
   return (
     <>
       <div className="card" style={{ marginTop: "1.1rem" }}>
-        <h2>Grant staff by email</h2>
+        <h2>Add employee</h2>
         <p className="muted" style={{ margin: "0.3rem 0 0", fontSize: "0.88rem" }}>
-          For accounts not easily found in the list below. The person must
-          already have a portal account.
+          Grants staff access right away. No portal account yet? They&apos;ll
+          get an email invite to set a password.
         </p>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
           <input
             type="email"
-            value={grantEmail}
+            value={addEmail}
             onChange={(e) => {
-              setGrantEmail(e.target.value);
-              setNoAccount(null);
+              setAddEmail(e.target.value);
+              setConfirming(false);
             }}
             placeholder="employee@example.com"
-            aria-label="Email to grant staff access"
+            aria-label="Email of the employee to add"
             style={{ flex: "1 1 220px", minWidth: 0 }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") runGrantByEmail();
+              if (e.key === "Enter" && addrValid) {
+                e.preventDefault();
+                if (confirming) runAdd();
+                else setConfirming(true);
+              }
             }}
           />
           <button
             type="button"
             className="btn btn--primary"
-            disabled={busy || !grantEmail.trim()}
-            onClick={runGrantByEmail}
+            disabled={busy || !addrValid || confirming}
+            title={addr && !addrValid ? "That doesn't look like an email address yet." : undefined}
+            onClick={() => setConfirming(true)}
           >
-            {busy ? "Saving…" : "Grant staff"}
+            Add employee
           </button>
         </div>
-        {noAccount ? (
-          <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.7rem" }}>
-            <span className="muted" style={{ fontSize: "0.88rem" }}>
-              That means {noAccount} hasn&apos;t created a portal account yet.
-              They can sign up first, or:
+        {confirming ? (
+          <div
+            style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.7rem" }}
+            role="alertdialog"
+            aria-label="Confirm adding employee"
+          >
+            <span style={{ fontSize: "0.9rem" }}>
+              Add <strong>{addr}</strong> as an employee?
             </span>
-            <button type="button" className="btn btn--sm btn--ghost" disabled={busy} onClick={runInvite}>
-              {busy ? "Sending…" : "Invite them & grant staff"}
+            <button type="button" className="btn btn--sm btn--primary" disabled={busy} onClick={runAdd}>
+              {busy ? "Adding…" : "Yes, add them"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--sm btn--ghost"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
             </button>
           </div>
         ) : null}

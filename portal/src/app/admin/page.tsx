@@ -27,11 +27,14 @@ const EMPTY_STATUS: StatusPipelineData = {
 
 export default async function AdminPage() {
   const supabase = await createClient();
+  const { data: adminData } = await supabase.rpc("is_admin");
+  const isAdmin = adminData === true;
   const [statusRes, pipelineRes, orphansRes, customersRes] = await Promise.all([
     supabase.rpc("get_status_pipeline"),
     supabase.rpc("get_admin_pipeline"),
-    supabase.rpc("get_admin_orphan_orders"),
-    supabase.rpc("get_admin_customers"),
+    // Unassigned-order repair is an admin tool; staff never needs the data.
+    isAdmin ? supabase.rpc("get_admin_orphan_orders") : Promise.resolve({ data: null, error: null }),
+    isAdmin ? supabase.rpc("get_admin_customers") : Promise.resolve({ data: null, error: null }),
   ]);
   const status = (statusRes.data ?? EMPTY_STATUS) as StatusPipelineData;
   const pipeline = (pipelineRes.data ?? []) as AdminPipelineRow[];
@@ -57,7 +60,7 @@ export default async function AdminPage() {
         <StatusPipeline initial={status} />
       )}
 
-      {orphans.length > 0 ? (
+      {isAdmin && orphans.length > 0 ? (
         <section style={{ marginTop: "1.5rem" }}>
           <h2>Unassigned orders</h2>
           <p className="muted" style={{ margin: "0.2rem 0 0", fontSize: "0.9rem" }}>
@@ -75,7 +78,7 @@ export default async function AdminPage() {
             {pipeline.length === 0 ? (
               <p className="muted">Nothing in the pipeline yet.</p>
             ) : (
-              <PipelineList pipeline={pipeline} />
+              <PipelineList pipeline={pipeline} readOnly={!isAdmin} />
             )}
           </div>
         </details>

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { requireAdminPage } from "@/lib/require-admin";
 import { type AdminAuditRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 const GRID = "minmax(160px, 1.2fr) minmax(140px, 1fr) minmax(120px, 2fr) 10rem";
 
 export default async function AdminHistoryPage() {
+  await requireAdminPage();
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_admin_audit", { p_limit: 200 });
   const rows = (data ?? []) as AdminAuditRow[];

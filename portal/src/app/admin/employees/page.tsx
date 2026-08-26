@@ -34,9 +34,9 @@ export default async function AdminEmployeesPage() {
           <h1>Employees</h1>
           <p className="muted sub num">
             {users.length} account{users.length === 1 ? "" : "s"}. Staff can
-            use the tidyCAD work queue; revoking removes that access
-            immediately. Employees sign up for a portal account first (or get
-            invited), then an admin grants staff here.
+            see orders here and use the tidyCAD work queue; revoking removes
+            that access immediately. Add an employee below — anyone without a
+            portal account gets an email invite to set a password.
           </p>
         </div>
       </div>

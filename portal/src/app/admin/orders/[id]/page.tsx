@@ -26,11 +26,18 @@ export default async function AdminOrderDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: adminData } = await supabase.rpc("is_admin");
+  const isAdmin = adminData === true;
+  // Customers, quotes, and rate-card config only feed the admin edit/quote
+  // tools, so the staff (read-only) view skips those fetches.
+  const skip = Promise.resolve({ data: null, error: null });
   const [detailRes, custRes, quotesRes, configRes] = await Promise.all([
     supabase.rpc("get_admin_order_detail", { p_order_id: id }),
-    supabase.rpc("get_admin_customers"),
-    supabase.rpc("get_quotes_for_order", { p_order_id: id }),
-    supabase.from("pricing_config").select("config").eq("active", true).single(),
+    isAdmin ? supabase.rpc("get_admin_customers") : skip,
+    isAdmin ? supabase.rpc("get_quotes_for_order", { p_order_id: id }) : skip,
+    isAdmin
+      ? supabase.from("pricing_config").select("config").eq("active", true).single()
+      : skip,
   ]);
 
   if (detailRes.error) {
@@ -145,6 +152,7 @@ export default async function AdminOrderDetailPage({
               Download all DXFs ({dxfCount})
             </a>
           ) : null}
+          {isAdmin ? (
           <GenerateQuoteModal
             orderId={o.id}
             drawerCount={detail.drawers.length}
@@ -153,6 +161,8 @@ export default async function AdminOrderDetailPage({
             hasSite={!!o.site_address}
             rates={rateDefaults}
           />
+          ) : null}
+          {isAdmin ? (
           <EditOrderModal
             order={{
               id: o.id,
@@ -171,6 +181,7 @@ export default async function AdminOrderDetailPage({
             hasCustomer={!!detail.customer}
             drawerCount={detail.drawers.length}
           />
+          ) : null}
         </div>
       </div>
 
@@ -198,9 +209,12 @@ export default async function AdminOrderDetailPage({
           tier: d.tier,
           quantity: d.quantity,
         }))}
+        readOnly={!isAdmin}
       />
 
-      <QuotesSection orderId={o.id} quotes={quotes} currentDrawerCopies={currentDrawerCopies} />
+      {isAdmin ? (
+        <QuotesSection orderId={o.id} quotes={quotes} currentDrawerCopies={currentDrawerCopies} />
+      ) : null}
     </main>
   );
 }

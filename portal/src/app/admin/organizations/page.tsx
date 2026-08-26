@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { requireAdminPage } from "@/lib/require-admin";
 import { type AdminOrganization } from "@/lib/types";
 import { createOrgAction } from "../actions";
 import { OrganizationsList } from "@/components/OrganizationsList";
@@ -10,6 +11,7 @@ export default async function AdminOrganizationsPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  await requireAdminPage();
   const sp = await searchParams;
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_admin_organizations");

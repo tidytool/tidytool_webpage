@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { requireAdminPage } from "@/lib/require-admin";
 import { type CalibrationPoint, type CalibrationSummary } from "@/lib/types";
 import { CalibrationAccuracy } from "@/components/CalibrationAccuracy";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
  * in the database, which we surface here as an access-denied state.
  */
 export default async function AdminAccuracyPage() {
+  await requireAdminPage();
   const supabase = await createClient();
   const [seriesRes, summaryRes] = await Promise.all([
     supabase.rpc("get_calibration_accuracy_series", { p_days: 90 }),
