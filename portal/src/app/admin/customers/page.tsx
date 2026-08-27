@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { requireAdminPage } from "@/lib/require-admin";
 import { type AdminCustomer, type AdminOrganization } from "@/lib/types";
 import { createCustomerAction } from "../actions";
 import { CustomersList } from "@/components/CustomersList";
@@ -10,6 +11,7 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  await requireAdminPage();
   const sp = await searchParams;
   const supabase = await createClient();
   const [custRes, orgRes] = await Promise.all([

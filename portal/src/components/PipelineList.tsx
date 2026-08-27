@@ -21,8 +21,15 @@ function formatDate(iso: string | null) {
 
 /** Drawer pipeline with multi-select: bulk mark-delivered (shared note) and
  *  bulk hard-delete (for test rows — a real drawer vanishes from ops, hence
- *  the typed confirmation). */
-export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
+ *  the typed confirmation). readOnly (staff) renders the list without any
+ *  of the mutation controls. */
+export function PipelineList({
+  pipeline,
+  readOnly = false,
+}: {
+  pipeline: AdminPipelineRow[];
+  readOnly?: boolean;
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("");
@@ -75,6 +82,7 @@ export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
 
   return (
     <>
+      {readOnly ? null : (
       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.9rem" }}>
         <input
           type="checkbox"
@@ -87,8 +95,9 @@ export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
           Select all ({pipeline.length})
         </label>
       </div>
+      )}
 
-      {selected.size > 0 ? (
+      {!readOnly && selected.size > 0 ? (
         <div className="bulkbar">
           <span className="num">{selected.size} selected</span>
           <input
@@ -113,13 +122,15 @@ export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
           const stage = d.status ? STATUS_LABELS[d.status] ?? d.status : "—";
           return (
             <li key={d.drawer_id} className="card" style={{ marginTop: "0.7rem", display: "flex", gap: "0.9rem" }}>
-              <input
-                type="checkbox"
-                checked={selected.has(d.drawer_id)}
-                onChange={() => toggle(d.drawer_id)}
-                aria-label={`Select ${d.nickname || "untitled drawer"}`}
-                style={{ marginTop: "0.25rem", flexShrink: 0 }}
-              />
+              {readOnly ? null : (
+                <input
+                  type="checkbox"
+                  checked={selected.has(d.drawer_id)}
+                  onChange={() => toggle(d.drawer_id)}
+                  aria-label={`Select ${d.nickname || "untitled drawer"}`}
+                  style={{ marginTop: "0.25rem", flexShrink: 0 }}
+                />
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "start" }}>
                   <div style={{ minWidth: 0 }}>
@@ -147,6 +158,7 @@ export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
                   ) : null}
                   <span className="chip">Created <strong>{formatDate(d.created_at)}</strong></span>
                 </div>
+                {readOnly ? null : (
                 <form action={markDeliveredAction} style={{ display: "flex", gap: "0.5rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
                   <input type="hidden" name="drawer_id" value={d.drawer_id} />
                   <input
@@ -158,6 +170,7 @@ export function PipelineList({ pipeline }: { pipeline: AdminPipelineRow[] }) {
                     Mark delivered
                   </button>
                 </form>
+                )}
               </div>
             </li>
           );

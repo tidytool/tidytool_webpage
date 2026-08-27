@@ -8,20 +8,26 @@ import { bulkAssignOrders, bulkDeleteOrders } from "@/app/admin/actions";
 import { DesignProgress } from "@/components/DesignProgress";
 
 const GRID = "1.4rem minmax(200px, 2fr) minmax(140px, 1.2fr) 5rem minmax(110px, 1fr) 6.5rem 7.5rem";
+// Same columns minus the select checkbox — the read-only (staff) layout.
+const GRID_RO = "minmax(200px, 2fr) minmax(140px, 1.2fr) 5rem minmax(110px, 1fr) 6.5rem 7.5rem";
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-/** Orders table with row navigation + multi-select bulk assign/delete. */
+/** Orders table with row navigation + multi-select bulk assign/delete.
+ *  readOnly (staff) keeps the navigation and drops the selection tools. */
 export function OrdersTable({
   orders,
   customers,
+  readOnly = false,
 }: {
   orders: AdminOrderRow[];
   customers: AdminCustomer[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
+  const grid = readOnly ? GRID_RO : GRID;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCustomer, setBulkCustomer] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +77,7 @@ export function OrdersTable({
 
   return (
     <>
-      {selected.size > 0 ? (
+      {!readOnly && selected.size > 0 ? (
         <div className="bulkbar">
           <span className="num">{selected.size} selected</span>
           <select
@@ -99,13 +105,15 @@ export function OrdersTable({
       {error ? <p className="banner--err" role="alert">{error}</p> : null}
 
       <div className="table" role="table" aria-label="Orders">
-        <div className="trow trow--head" role="row" style={{ gridTemplateColumns: GRID }}>
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={toggleAll}
-            aria-label="Select all orders"
-          />
+        <div className="trow trow--head" role="row" style={{ gridTemplateColumns: grid }}>
+          {readOnly ? null : (
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              aria-label="Select all orders"
+            />
+          )}
           <span>Customer / project</span>
           <span>Organization</span>
           <span className="tr-right">Drawers</span>
@@ -123,16 +131,18 @@ export function OrdersTable({
               key={o.order_id}
               className="trow trow--click"
               role="row"
-              style={{ gridTemplateColumns: GRID }}
+              style={{ gridTemplateColumns: grid }}
               onClick={() => router.push(`/admin/orders/${o.order_id}`)}
             >
-              <input
-                type="checkbox"
-                checked={selected.has(o.order_id)}
-                onChange={() => toggle(o.order_id)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`Select order from ${o.customer_name || "unknown"}`}
-              />
+              {readOnly ? null : (
+                <input
+                  type="checkbox"
+                  checked={selected.has(o.order_id)}
+                  onChange={() => toggle(o.order_id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select order from ${o.customer_name || "unknown"}`}
+                />
+              )}
               <span>
                 <span className="primary">{o.customer_name || "Unknown"}</span>
                 {o.project_name ? <span className="muted"> — {o.project_name}</span> : null}

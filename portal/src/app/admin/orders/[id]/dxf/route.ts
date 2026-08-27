@@ -11,8 +11,9 @@ export const dynamic = "force-dynamic";
  * GET /admin/orders/[id]/dxf — every DXF on the order, zipped.
  *
  * Route handlers do NOT inherit the admin layout's gate, so the same checks
- * are replicated here (claims -> 401, is_admin -> 403); get_admin_order_detail
- * then re-checks is_admin() inside the database as defense in depth.
+ * are replicated here (claims -> 401, is_staff -> 403 — staff download DXFs
+ * too); get_admin_order_detail then re-checks is_staff() inside the database
+ * as defense in depth.
  *
  * Files are fetched with allSettled and zipped in memory: orders are tens of
  * drawers and DXFs are small text files, so streaming machinery isn't worth
@@ -28,8 +29,8 @@ export async function GET(
   const claims = await getClaims();
   if (!claims) return new Response("Unauthorized", { status: 401 });
   const supabase = await createClient();
-  const { data: isAdmin, error: adminErr } = await supabase.rpc("is_admin");
-  if (adminErr || !isAdmin) return new Response("Forbidden", { status: 403 });
+  const { data: isStaff, error: staffErr } = await supabase.rpc("is_staff");
+  if (staffErr || !isStaff) return new Response("Forbidden", { status: 403 });
 
   const { data, error } = await supabase.rpc("get_admin_order_detail", {
     p_order_id: id,

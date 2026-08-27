@@ -369,6 +369,9 @@ async function requireAdmin(): Promise<string | null> {
   return null;
 }
 
+/** Light format check so a typo can't silently invite a bad address. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function portalRedirectTo(): string {
   // Preview/dev deploys must never send invite links pointing at prod, so the
   // hardcoded domain is the last resort, after Vercel's per-deploy URL.
@@ -488,26 +491,37 @@ export async function revokeStaffRole(
   return { ok: true };
 }
 
-/** Invite a new employee: service-role invite email creates the auth user,
- *  then staff is granted through the normal session client. Client-callable. */
-export async function inviteEmployeeAndGrantStaff(
+/** Add an employee in one step: grant staff if the account already exists,
+ *  otherwise send a Supabase invite email (service role) and then grant.
+ *  Returns `invited` so the UI can say which of the two happened.
+ *  Client-callable. */
+export async function addEmployee(
   email: string,
-): Promise<{ error?: string; ok?: boolean }> {
+): Promise<{ error?: string; ok?: boolean; invited?: boolean }> {
   const addr = email.trim().toLowerCase();
-  if (!addr) return { error: "Enter an email address." };
+  if (!EMAIL_RE.test(addr)) return { error: "Enter a valid email address." };
   const denied = await requireAdmin();
   if (denied) return { error: denied };
 
+  // Existing account? Just grant — no email involved.
+  const grant = await grantStaffRole(addr);
+  if (grant.ok) return { ok: true, invited: false };
+  if (!/no auth user/i.test(grant.error ?? "")) return grant;
+
+  // New person: the invite email creates the auth user, then grant as usual.
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(addr, {
     redirectTo: portalRedirectTo(),
   });
-  // "Already registered" is fine here — the account exists, so just grant.
+  // "Already registered" = the account appeared between the two calls (or an
+  // earlier invite is pending, which no re-invite can refresh) — grant anyway;
+  // an expired link is recovered via "Email me a link" on the sign-in page.
   if (inviteErr && !/already.*(registered|exists|been invited)/i.test(inviteErr.message)) {
     return { error: inviteErr.message };
   }
-  return grantStaffRole(addr);
+  const res = await grantStaffRole(addr);
+  return res.ok ? { ok: true, invited: !inviteErr } : res;
 }
 
 export async function markDeliveredAction(formData: FormData) {

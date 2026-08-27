@@ -191,10 +191,13 @@ export function OrderContents({
   orderId,
   boxes,
   drawers,
+  readOnly = false,
 }: {
   orderId: string;
   boxes: Box[];
   drawers: DrawerVM[];
+  /** Staff view: browse boxes, drawers, files — no Organize controls. */
+  readOnly?: boolean;
 }) {
   const [organize, setOrganize] = useState(false);
   const [quickView, setQuickView] = useState<DrawerQuickViewData | null>(null);
@@ -216,20 +219,24 @@ export function OrderContents({
             {physicalTotal !== drawers.length ? ` · ×${physicalTotal} physical` : ""})
           </span>
         </h2>
-        <button
-          type="button"
-          className={organize ? "btn btn--primary btn--sm" : "btn btn--ghost btn--sm"}
-          onClick={() => setOrganize((v) => !v)}
-          aria-pressed={organize}
-        >
-          {organize ? "Done organizing" : "Organize"}
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            className={organize ? "btn btn--primary btn--sm" : "btn btn--ghost btn--sm"}
+            onClick={() => setOrganize((v) => !v)}
+            aria-pressed={organize}
+          >
+            {organize ? "Done organizing" : "Organize"}
+          </button>
+        )}
       </div>
 
       <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0.9rem" }}>
         {organize
           ? "Group drawers into boxes, set copies, rename, or mark delivered. A box duplicates as a unit; drawers outside a box are trays. Design is quoted once; foam per physical copy."
-          : "Boxes duplicate as a unit; drawers outside a box are trays. Open a box to see the drawers inside — or hit Organize to restructure."}
+          : readOnly
+            ? "Boxes duplicate as a unit; drawers outside a box are trays. Open a box to see the drawers inside — click a drawer for photos, previews, and files."
+            : "Boxes duplicate as a unit; drawers outside a box are trays. Open a box to see the drawers inside — or hit Organize to restructure."}
       </p>
 
       {boxes.length === 0 && drawers.length === 0 ? (
