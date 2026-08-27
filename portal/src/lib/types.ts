@@ -219,13 +219,17 @@ export type AdminOrderDetail = {
   drawers: AdminDetailDrawer[];
 };
 
-/** Row from admin_list_users() — the Employees page. */
+/** Row from admin_list_users() — the Employees page. Employees only
+ *  (accounts holding at least one role) as of migration 20260827041500. */
 export type AdminUserRow = {
   user_id: string;
   email: string;
   roles: string[];
   created_at: string;
   last_sign_in_at: string | null;
+  /** Set when the account was created via an email invite; with a null
+   *  last_sign_in_at it means the invite hasn't been accepted yet. */
+  invited_at: string | null;
 };
 
 /** Row from get_admin_audit(). */
