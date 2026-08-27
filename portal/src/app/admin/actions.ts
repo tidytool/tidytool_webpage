@@ -491,6 +491,91 @@ export async function revokeStaffRole(
   return { ok: true };
 }
 
+/** Grant the 'admin' role by email. Client-callable — the SECURITY DEFINER
+ *  RPC re-checks is_admin() in the database. */
+export async function grantAdminRole(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("grant_admin_role", { p_email: addr });
+  if (error) return { error: error.message };
+  const res = data as StaffRpcResult;
+  if (!res?.ok) return { error: res?.error ?? "Grant failed." };
+  revalidatePath("/admin/employees");
+  return { ok: true };
+}
+
+/** Revoke the 'admin' role by email. The database refuses to remove the last
+ *  admin (raises 'cannot remove the last admin'), so lockout is impossible.
+ *  Client-callable. */
+export async function revokeAdminRole(
+  email: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("revoke_admin_role", { p_email: addr });
+  if (error) {
+    return {
+      error: /last admin/i.test(error.message)
+        ? "That's the last admin — grant admin to someone else first."
+        : error.message,
+    };
+  }
+  const res = data as StaffRpcResult;
+  if (!res?.ok) return { error: res?.error ?? "Revoke failed." };
+  revalidatePath("/admin/employees");
+  return { ok: true };
+}
+
+/** Set (or reset) an employee's password directly — the admin relays it to
+ *  them, no email involved. Same create-or-reset shape as the customer-side
+ *  fallback. Client-callable. */
+export async function setEmployeePassword(
+  email: string,
+  password: string,
+): Promise<{ error?: string; ok?: boolean }> {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return { error: "Enter an email address." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  const denied = await requireAdmin();
+  if (denied) return { error: denied };
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { error } = await admin.auth.admin.createUser({
+    email: addr,
+    password,
+    email_confirm: true, // no confirmation email — the admin relays the password
+  });
+  if (!error) {
+    revalidatePath("/admin/employees");
+    return { ok: true };
+  }
+
+  // Already registered (the normal case for an employee) — reset instead.
+  if (/already.*(registered|exists)/i.test(error.message)) {
+    const { data: page, error: listErr } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (listErr) return { error: listErr.message };
+    const existing = page.users.find((u) => u.email?.toLowerCase() === addr);
+    if (!existing) return { error: "Account exists but couldn't be found to reset." };
+    const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
+      password,
+    });
+    if (updErr) return { error: updErr.message };
+    revalidatePath("/admin/employees");
+    return { ok: true };
+  }
+
+  return { error: error.message };
+}
+
 /** Add an employee in one step: grant staff if the account already exists,
  *  otherwise send a Supabase invite email (service role) and then grant.
  *  Returns `invited` so the UI can say which of the two happened.

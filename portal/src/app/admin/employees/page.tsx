@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getClaims } from "@/lib/supabase/auth";
 import { type AdminUserRow } from "@/lib/types";
 import { EmployeesList } from "@/components/EmployeesList";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminEmployeesPage() {
   const supabase = await createClient();
+  const claims = await getClaims();
+  const selfEmail = ((claims?.email as string | undefined) ?? "").toLowerCase();
   const { data, error } = await supabase.rpc("admin_list_users");
 
   if (error && /admin only/i.test(error.message)) {
@@ -33,17 +36,17 @@ export default async function AdminEmployeesPage() {
           <p className="eyebrow">Admin</p>
           <h1>Employees</h1>
           <p className="muted sub num">
-            {users.length} account{users.length === 1 ? "" : "s"}. Staff can
-            see orders here and use the tidyCAD work queue; revoking removes
-            that access immediately. Add an employee below — anyone without a
-            portal account gets an email invite to set a password.
+            {users.length} employee{users.length === 1 ? "" : "s"}. Staff
+            see orders here and use the tidyCAD work queue; admins can also
+            manage customers, employees, and roles. Customers aren&apos;t
+            listed here — they live on the Customers tab.
           </p>
         </div>
       </div>
 
       {error ? <p className="banner--err" role="alert">{error.message}</p> : null}
 
-      <EmployeesList users={users} />
+      <EmployeesList users={users} selfEmail={selfEmail} />
     </main>
   );
 }
