@@ -203,6 +203,12 @@ export type AdminDetailDrawer = {
   stage?: string | null;
   stage_label?: string | null;
   stage_sort?: number | null;
+  /**
+   * Hold/rework/cancel axis (status backbone) + its reason. Optional/absent
+   * until migration 20260910175529 is applied; treat missing as "active".
+   */
+  state?: string | null;
+  state_reason?: string | null;
   created_at: string;
 };
 
@@ -222,6 +228,9 @@ export type AdminOrderDetail = {
     customer_id: string | null;
     site_address: string | null;
     round_trip_miles: number | null;
+    /** Hold/cancel axis + reason (status backbone); active when absent. */
+    state?: string | null;
+    state_reason?: string | null;
   };
   customer: { id: string; name: string | null; email: string | null; phone: string | null } | null;
   organization: { id: string; name: string } | null;

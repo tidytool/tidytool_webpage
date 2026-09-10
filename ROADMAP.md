@@ -143,11 +143,16 @@ Full spec: `planning/FEATURE-profiles.md`; integration architecture: `planning/A
 **In review / next:**
 
 - ▶ **Order-page UX redesign** — branch `feat/orders-page-redesign`, in review.
-- ▶ **Customer dashboard + label-page UX redesign** — branch `feat/portal-ux-redesign`, in review:
-  work-queue dashboard (grouped drawer rows, photo thumbnails, one status per drawer), customer
-  approval step removed from the portal (label submission = go-ahead; migration
-  `20260804120000_label_submit_auto_approval` staged, NOT applied), professional copy pass,
-  single-accent pocket outlines + sticky photo on `/labels/[id]`.
+- ✅ **Customer dashboard + label-page UX redesign** — SHIPPED (PR #27 + migration
+  `20260804120000` applied): work-queue dashboard, approval step removed (label submission =
+  go-ahead), professional copy pass, single-accent pocket outlines + sticky photo.
+- ▶ **Admin cleanup controls** — branch `feat/admin-cleanup-controls`, in review (DB side LIVE):
+  migrations `20260910175336` + `20260910175529` APPLIED 2026-09-10 — append-only guards now
+  permit audited purges so Delete Order/Drawer work on records with history, mark-delivered
+  actually advances stage (correction status-event), Sam granted the admin role, order detail
+  exposes drawer state. UI adds order Hold / Cancel (reason + drawer cascade) / Reactivate and
+  a per-drawer state control under Organize. Also carries `fix/labels-approved-quiet`
+  (approved-without-labels drawers read "Queued for production", not "Labels needed").
 - ▶ **T3.7 estimated delivery date** — TODO (see Path Forward #3).
 - ▶ **T4 lifecycle + timeline (migration 0005)** — event backbone exists; customer-facing status timeline,
   customer `drawer_event` RLS, and status-change trigger remain (Path Forward #4).
