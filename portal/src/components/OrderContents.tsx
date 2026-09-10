@@ -15,7 +15,7 @@ import { BoxCard } from "@/components/BoxCard";
 import { DrawerBoxControls } from "@/components/DrawerBoxControls";
 import { DrawerQuickView, type DrawerQuickViewData } from "@/components/DrawerQuickView";
 import { createBoxAction } from "@/app/admin/box-actions";
-import { updateNicknameAction, markDeliveredAction } from "@/app/admin/actions";
+import { updateNicknameAction, markDeliveredAction, setDrawerStateAction } from "@/app/admin/actions";
 import { STATUS_LABELS, type ApprovalStatus } from "@/lib/types";
 import { dxfPublicUrl } from "@/lib/dxf";
 
@@ -37,6 +37,15 @@ type DrawerVM = {
   quantity: number;
   /** essential | professional | premium; missing (pre-migration) renders as essential. */
   tier?: string | null;
+  /** Hold/rework/cancel axis; missing (pre-migration 20260910175529) = active. */
+  state?: string | null;
+  state_reason?: string | null;
+};
+
+const STATE_BADGE: Record<string, string> = {
+  on_hold: "On hold",
+  rework: "Rework",
+  cancelled: "Cancelled",
 };
 
 function Model3D({ url }: { url: string }) {
@@ -133,6 +142,11 @@ function DrawerRow({
           <span className="chip">
             Approval <strong>{drawer.customer_approval_status}</strong>
           </span>
+          {drawer.state && drawer.state !== "active" ? (
+            <span className="badge badge--warn" title={drawer.state_reason ?? undefined}>
+              {STATE_BADGE[drawer.state] ?? drawer.state}
+            </span>
+          ) : null}
         </div>
         {drawer.design_preview_url || dxfUrl ? (
           <p style={{ margin: "0.4rem 0 0", fontSize: "0.85rem", display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
@@ -173,11 +187,32 @@ function DrawerRow({
               boxes={boxes}
             />
 
-            <form action={markDeliveredAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
+            {drawer.state !== "cancelled" ? (
+              <form action={markDeliveredAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
+                <input type="hidden" name="drawer_id" value={drawer.id} />
+                <input name="note" placeholder="Delivery note (optional)" style={{ flex: 1, minWidth: 0 }} />
+                <button className="btn btn--ghost" type="submit">
+                  Delivered
+                </button>
+              </form>
+            ) : null}
+
+            <form action={setDrawerStateAction} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
               <input type="hidden" name="drawer_id" value={drawer.id} />
-              <input name="note" placeholder="Delivery note (optional)" style={{ flex: 1, minWidth: 0 }} />
+              <input type="hidden" name="order_id" value={orderId} />
+              <select name="state" defaultValue={drawer.state ?? "active"} aria-label="Drawer state">
+                <option value="active">Active</option>
+                <option value="on_hold">On hold</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <input
+                name="reason"
+                placeholder="Reason (required for hold/cancel)"
+                defaultValue={drawer.state_reason ?? ""}
+                style={{ flex: 1, minWidth: "140px" }}
+              />
               <button className="btn btn--ghost" type="submit">
-                Delivered
+                Set state
               </button>
             </form>
           </div>

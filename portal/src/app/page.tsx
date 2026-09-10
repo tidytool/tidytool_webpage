@@ -7,6 +7,7 @@ import {
   type MyDrawer,
   type MyLabelStatus,
   type OrderTrackerData,
+  APPROVED_SORT,
   needsLabels,
 } from "@/lib/types";
 
@@ -81,6 +82,7 @@ function idleStatus(d: MyDrawer, l: MyLabelStatus | undefined): string {
     if (sort >= 110) return "Delivered";
     if (sort >= 100) return "Ready for delivery";
     if (sort >= 80) return "In production";
+    if (sort >= APPROVED_SORT) return "Queued for production";
     if (sort >= 30) return "In design";
     if (sort >= 20) return "Scanned & measured";
     return "Received";

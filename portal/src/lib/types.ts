@@ -135,6 +135,15 @@ export type AdminOrderRow = {
 export const DESIGNED_SORT = 40;
 
 /**
+ * status_def.sort_order of the "approved" stage. A drawer approved WITHOUT a
+ * label submission means the customer opted out of labels (staff approved on
+ * their behalf) — the label-entry window is designed..awaiting_approval, so
+ * approved-or-later drawers must not count as "Labels needed". Keep in sync
+ * with status_def.
+ */
+export const APPROVED_SORT = 70;
+
+/**
  * Row from get_my_label_status() — per-drawer tool-label state for the
  * dashboard CTAs. Absent until migration 20260803120000 is applied.
  */
@@ -150,6 +159,7 @@ export type MyLabelStatus = {
 export function needsLabels(s: MyLabelStatus): boolean {
   return (
     (s.stage_sort ?? 0) >= DESIGNED_SORT &&
+    (s.stage_sort ?? 0) < APPROVED_SORT &&
     s.has_dxf &&
     !s.locked &&
     s.labels_submitted_at === null
@@ -193,6 +203,12 @@ export type AdminDetailDrawer = {
   stage?: string | null;
   stage_label?: string | null;
   stage_sort?: number | null;
+  /**
+   * Hold/rework/cancel axis (status backbone) + its reason. Optional/absent
+   * until migration 20260910175529 is applied; treat missing as "active".
+   */
+  state?: string | null;
+  state_reason?: string | null;
   created_at: string;
 };
 
@@ -212,6 +228,9 @@ export type AdminOrderDetail = {
     customer_id: string | null;
     site_address: string | null;
     round_trip_miles: number | null;
+    /** Hold/cancel axis + reason (status backbone); active when absent. */
+    state?: string | null;
+    state_reason?: string | null;
   };
   customer: { id: string; name: string | null; email: string | null; phone: string | null } | null;
   organization: { id: string; name: string } | null;

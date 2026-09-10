@@ -622,3 +622,77 @@ export async function markDeliveredAction(formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
+
+/* ---- Order / drawer state controls (hold · cancel · reactivate) ----------
+ * Thin wrappers over the staff RPCs set_order_state / set_drawer_state; the
+ * database enforces the state whitelist and the reason requirement again.
+ * Cancelling an order can cascade to its non-cancelled drawers (the backbone
+ * treats the axes independently, so an order-only cancel would leave active
+ * drawers in the pipeline). */
+
+const STATE_CHOICES = ["active", "on_hold", "cancelled"] as const;
+
+export async function setOrderStateAction(formData: FormData) {
+  const orderId = String(formData.get("order_id") ?? "");
+  const state = String(formData.get("state") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  const cascade = formData.get("cascade") === "on";
+  const drawerIds = String(formData.get("drawer_ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!orderId) throw new Error("Missing order id.");
+  if (!(STATE_CHOICES as readonly string[]).includes(state)) throw new Error("Unknown state.");
+  if (state !== "active" && !reason) {
+    redirect(`/admin/orders/${orderId}?error=${encodeURIComponent("A reason is required.")}`);
+  }
+
+  const supabase = await createClient();
+  if (state === "cancelled" && cascade) {
+    for (const id of drawerIds) {
+      const { error } = await supabase.rpc("set_drawer_state", {
+        p_drawer_id: id,
+        p_state: "cancelled",
+        p_reason: reason,
+        p_source: "portal",
+        p_idempotency_key: null,
+      });
+      if (error) redirect(`/admin/orders/${orderId}?error=${encodeURIComponent(error.message)}`);
+    }
+  }
+  const { error } = await supabase.rpc("set_order_state", {
+    p_order_id: orderId,
+    p_state: state,
+    p_reason: reason || null,
+    p_source: "portal",
+  });
+  if (error) redirect(`/admin/orders/${orderId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+}
+
+export async function setDrawerStateAction(formData: FormData) {
+  const drawerId = String(formData.get("drawer_id") ?? "");
+  const orderId = String(formData.get("order_id") ?? "");
+  const state = String(formData.get("state") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!drawerId || !orderId) throw new Error("Missing drawer or order id.");
+  if (!(STATE_CHOICES as readonly string[]).includes(state)) throw new Error("Unknown state.");
+  if (state !== "active" && !reason) {
+    redirect(`/admin/orders/${orderId}?error=${encodeURIComponent("A reason is required.")}`);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_drawer_state", {
+    p_drawer_id: drawerId,
+    p_state: state,
+    p_reason: reason || null,
+    p_source: "portal",
+    p_idempotency_key: null,
+  });
+  if (error) redirect(`/admin/orders/${orderId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+}

@@ -13,6 +13,7 @@ import { OrderContents } from "@/components/OrderContents";
 import { GenerateQuoteModal, type RateDefaults } from "@/components/GenerateQuoteModal";
 import { DEFAULT_PRICING_CONFIG, parsePricingConfig } from "@/lib/pricing/config";
 import { EditOrderModal } from "@/components/EditOrderModal";
+import { OrderStateControls } from "@/components/OrderStateControls";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,11 @@ export default async function AdminOrderDetailPage({
   // Absent until the quoting migration is applied — render nothing rather than crash.
   const quotes = (quotesRes.error ? [] : (quotesRes.data ?? [])) as AdminQuote[];
   const o = detail.order;
+  const orderState = o.state ?? "active";
+  const orderStateReason = o.state_reason ?? null;
+  const cancellableDrawerIds = detail.drawers
+    .filter((d) => (d.state ?? "active") !== "cancelled")
+    .map((d) => d.id);
 
   // Current physical-copy structure — used to flag quotes priced before a change.
   const currentDrawerCopies = detail.drawers.map((d) => {
@@ -128,6 +134,11 @@ export default async function AdminOrderDetailPage({
             ) : (
               <span className="badge badge--warn">Unassigned</span>
             )}
+            {!isAdmin && orderState !== "active" ? (
+              <span className="badge badge--warn" title={orderStateReason ?? undefined}>
+                {orderState === "cancelled" ? "Cancelled" : "On hold"}
+              </span>
+            ) : null}
             <span>
               Created {new Date(o.created_at).toLocaleDateString()} ·{" "}
               <span className="num">{formatCents(o.total_price) ?? "no price"}</span>
@@ -147,6 +158,14 @@ export default async function AdminOrderDetailPage({
         </div>
 
         <div className="order-head__actions">
+          {isAdmin ? (
+            <OrderStateControls
+              orderId={o.id}
+              state={orderState}
+              stateReason={orderStateReason}
+              cancellableDrawerIds={cancellableDrawerIds}
+            />
+          ) : null}
           {dxfCount > 0 ? (
             <a className="btn btn--ghost" href={`/admin/orders/${o.id}/dxf`}>
               Download all DXFs ({dxfCount})
@@ -205,6 +224,8 @@ export default async function AdminOrderDetailPage({
           dxf_url: d.dxf_url,
           stage: d.stage,
           stage_label: d.stage_label,
+          state: d.state,
+          state_reason: d.state_reason,
           box_id: d.box_id,
           tier: d.tier,
           quantity: d.quantity,
