@@ -10,11 +10,16 @@
  * boundary onto dimensions.reference_corners by bilinear interpolation.
  *
  * States:
- *  - corners present → overlay + entry list (the normal path)
+ *  - corners present → overlay + entry list (the normal path). Corners come
+ *    from normalized reference_corners, or from tidyCAD's pixel-space
+ *    correction.corner_points scaled by the photo's natural size.
  *  - no corners + staff → align mode: drag the four drawer corners on the
  *    photo, save via set_drawer_reference_corners (backfills legacy drawers);
  *    staff can also re-align existing corners
  *  - no corners + customer → photo and a numbered plan drawing side by side
+ *  - locked (≥ in_production / cancelled) → read-only "Drawer layout": the same
+ *    photo + outlines, and a Pockets list instead of the entry form, so a
+ *    customer loading tools can see which pocket is which.
  *
  * Drafts auto-save (debounced; saves are SERIALIZED through a promise chain so
  * a slow older request can never overwrite a newer one — replace-all semantics
@@ -30,6 +35,8 @@ import { dxfPublicUrl } from "@/lib/dxf";
 import {
   extractPockets,
   referenceCorners,
+  pixelCorners,
+  pixelToNormalized,
   dxfToPhoto,
   pocketColor,
   type CornerQuad,
@@ -85,8 +92,36 @@ export function LabelEditor({
   const router = useRouter();
   const d = data.drawer;
   const canEdit = d.editable;
+  // Read-only "Drawer layout" once the drawer is locked. Keyed off `locked`,
+  // not `!editable`: pre-design drawers are non-editable too but have no
+  // layout to show yet.
+  const viewOnly = d.locked;
   const dxfUrl = dxfPublicUrl(d.dxf_url);
-  const savedQuad = useMemo(() => referenceCorners(d.dimensions), [d.dimensions]);
+
+  // Natural photo pixel size — the overlay draws in image-pixel space so
+  // circles and text keep their aspect on non-square photos. The ref callback
+  // handles cache hits where `load` fires before hydration and onLoad never
+  // runs; onLoad stays as the fallback for normal loads. Declared up here
+  // because pixel-space corners need it to become a usable quad.
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  const readNat = useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth && img.naturalHeight) {
+      setNat({ w: img.naturalWidth, h: img.naturalHeight });
+    }
+  }, []);
+
+  // ---- corner quad ---------------------------------------------------------
+  // Normalized reference_corners win; otherwise tidyCAD's pixel-space
+  // correction.corner_points, scaled by the photo's natural size once known.
+  const refQuad = useMemo(() => referenceCorners(d.dimensions), [d.dimensions]);
+  const pxQuad = useMemo(() => pixelCorners(d.dimensions), [d.dimensions]);
+  const savedQuad = useMemo(
+    () => refQuad ?? (pxQuad && nat ? pixelToNormalized(pxQuad, nat) : null),
+    [refQuad, pxQuad, nat],
+  );
+  const hasCornerData = !!refQuad || !!pxQuad;
+  // Pixel corners can't be judged until the photo reports its size.
+  const cornersResolved = !pxQuad || !!nat;
 
   // ---- DXF → pockets -------------------------------------------------------
   const [pocketSet, setPocketSet] = useState<PocketSet | null>(null);
@@ -289,16 +324,6 @@ export function LabelEditor({
   // While aligning, the draft quad wins so staff see the outlines follow.
   const quad = aligning ? alignQuad : savedQuad;
 
-  // Natural photo pixel size — the overlay draws in image-pixel space so
-  // circles and text keep their aspect on non-square photos. The ref callback
-  // handles cache hits where `load` fires before hydration and onLoad never
-  // runs; onLoad stays as the fallback for normal loads.
-  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
-  const readNat = useCallback((img: HTMLImageElement | null) => {
-    if (img && img.complete && img.naturalWidth && img.naturalHeight) {
-      setNat({ w: img.naturalWidth, h: img.naturalHeight });
-    }
-  }, []);
   const badgeR = nat ? Math.max(10, Math.min(nat.w, nat.h) * 0.018) : 12;
 
   function overlayPath(points: [number, number][], q: CornerQuad): string {
@@ -373,7 +398,8 @@ export function LabelEditor({
   }
 
   const showOverlay = dxfState === "ready" && !!quad && !!d.photo_url;
-  const showAlignPrompt = d.is_staff && !savedQuad && dxfState === "ready" && !!d.photo_url;
+  const showAlignPrompt =
+    d.is_staff && !savedQuad && cornersResolved && dxfState === "ready" && !!d.photo_url;
   const showRealign = d.is_staff && !!savedQuad && dxfState === "ready" && !!d.photo_url && !aligning;
 
   return (
@@ -511,10 +537,12 @@ export function LabelEditor({
           </p>
         ) : null}
 
-        {!savedQuad && !d.is_staff && dxfState === "ready" ? (
+        {!hasCornerData && !d.is_staff && dxfState === "ready" ? (
           <>
             <p className="muted" style={{ fontSize: "0.85rem", margin: "0.7rem 0 0.4rem" }}>
-              Match the numbers below to your drawer photo above — the drawing shows where each pocket sits.
+              {viewOnly
+                ? "The photo above is from your scan; the drawing shows where each pocket sits in your foam insert. Match the numbers to the list."
+                : "Match the numbers below to your drawer photo above — the drawing shows where each pocket sits."}
             </p>
             {planView()}
           </>
@@ -523,25 +551,81 @@ export function LabelEditor({
         {dxfState === "loading" ? <p className="muted" style={{ marginTop: "0.7rem" }}>Loading the design…</p> : null}
         {dxfState === "error" ? (
           <p className="muted" style={{ marginTop: "0.7rem" }}>
-            We couldn&apos;t read this drawer&apos;s design file. Labels can&apos;t be entered here yet — let us know and
-            we&apos;ll sort it out.
+            {viewOnly
+              ? "The photo above is from your scan. We couldn't read this drawer's design file, so the pocket outlines can't be drawn — let us know and we'll sort it out."
+              : "We couldn't read this drawer's design file. Labels can't be entered here yet — let us know and we'll sort it out."}
           </p>
         ) : null}
         {dxfState === "none" ? (
           <p className="muted" style={{ marginTop: "0.7rem" }}>
-            The design for this drawer isn&apos;t finished yet — labels open once it is.
+            {viewOnly
+              ? "The photo above is from your scan. This drawer has no design file on record, so the pocket outlines can't be drawn."
+              : "The design for this drawer isn't finished yet — labels open once it is."}
           </p>
         ) : null}
 
         {showOverlay && !aligning ? (
           <p className="muted" style={{ fontSize: "0.82rem", margin: "0.7rem 0 0" }}>
-            Top-down view from your scan — outlines show where each pocket will be
-            cut. Select a pocket to jump to its label.
+            {viewOnly
+              ? "The photo above is from your scan — each outline is a pocket in your foam insert. Select a pocket to jump to it in the list."
+              : "Top-down view from your scan — outlines show where each pocket will be cut. Select a pocket to jump to its label."}
           </p>
         ) : null}
       </section>
 
       {/* ---------------- entries ---------------- */}
+      {viewOnly ? (
+        <section className="card" aria-labelledby="pocketsHeading">
+          <h2 id="pocketsHeading" style={{ fontSize: "1.1rem", margin: "0 0 0.25rem" }}>
+            Pockets
+          </h2>
+          <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
+            {rows?.some((r) => r.na || r.text.trim())
+              ? "Numbered to match the photo. Labels are what was engraved."
+              : "Numbered to match the photo."}
+          </p>
+          {rows ? (
+            <ul className="lbl-rows">
+              {rows.map((r) => {
+                const col = pocketColor(r.index);
+                const text = r.text.trim();
+                return (
+                  <li
+                    key={r.key}
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(r.key, el);
+                      else rowRefs.current.delete(r.key);
+                    }}
+                    className={`lbl-row${r.na ? " lbl-row--na" : ""}${hot === r.key ? " lbl-row--hot" : ""}`}
+                    style={{ ["--rc" as string]: col }}
+                    onMouseEnter={() => setHot(r.key)}
+                    onMouseLeave={() => setHot(null)}
+                  >
+                    <span className="lbl-sw">{r.index}</span>
+                    {r.na ? (
+                      <span className="muted">No label</span>
+                    ) : text ? (
+                      <span>{text}</span>
+                    ) : (
+                      <span className="muted">Unlabelled pocket</span>
+                    )}
+                    <span aria-hidden />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : dxfState === "loading" ? (
+            <p className="muted" style={{ marginTop: "0.8rem" }}>Loading pockets…</p>
+          ) : (
+            <p className="muted" style={{ marginTop: "0.8rem" }}>
+              The pocket list needs the drawer&apos;s design file, which isn&apos;t available right now.
+            </p>
+          )}
+          <p className="err" role="alert">
+            {error}
+          </p>
+        </section>
+      ) : (
       <section className="card">
         {d.locked ? (
           <p className="badge badge--pending" style={{ display: "inline-block", marginBottom: "0.8rem" }}>
@@ -683,6 +767,7 @@ export function LabelEditor({
           <p className="muted">Loading pockets…</p>
         ) : null}
       </section>
+      )}
     </div>
   );
 }
