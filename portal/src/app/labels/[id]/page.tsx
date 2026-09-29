@@ -5,9 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getClaims } from "@/lib/supabase/auth";
 
 /**
- * /labels/[id] — name the tools in one drawer. Auth-required (unlike
- * /approve, there is no anonymous path). Data comes from get_drawer_labels
- * (migration 20260803120000); the DXF itself is fetched client-side.
+ * /labels/[id] — name the tools in one drawer, or (once the drawer is locked
+ * for production / delivered) the read-only "Drawer layout": scan photo with
+ * numbered pocket outlines for loading tools. Auth-required (unlike /approve,
+ * there is no anonymous path). Data comes from get_drawer_labels (migration
+ * 20260803120000); the DXF itself is fetched client-side.
  */
 export default async function LabelsPage({
   params,
@@ -34,6 +36,7 @@ export default async function LabelsPage({
 
   const payload = data as DrawerLabelsData | null;
   const name = payload?.drawer.nickname || "Your TidyTool drawer";
+  const viewOnly = payload?.drawer.locked ?? false;
 
   return (
     <>
@@ -44,12 +47,21 @@ export default async function LabelsPage({
             ← All orders
           </a>
         </p>
-        <p className="eyebrow">Tool labels</p>
+        <p className="eyebrow">{viewOnly ? "Drawer layout" : "Tool labels"}</p>
         <h1>{name}</h1>
         <p className="muted" style={{ maxWidth: "64ch" }}>
-          Each pocket is numbered on the photo. Enter the text to engrave on that
-          pocket&apos;s label, or mark <b>No label</b> for pockets that don&apos;t
-          need one. Labels are engraved before the foam is cut.
+          {viewOnly ? (
+            <>
+              Your scan photo with each pocket outlined and numbered. Match the
+              numbers to the list to see which tool goes where.
+            </>
+          ) : (
+            <>
+              Each pocket is numbered on the photo. Enter the text to engrave on that
+              pocket&apos;s label, or mark <b>No label</b> for pockets that don&apos;t
+              need one. Labels are engraved before the foam is cut.
+            </>
+          )}
         </p>
 
         {migrationPending ? (

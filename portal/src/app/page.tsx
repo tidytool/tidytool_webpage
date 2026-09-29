@@ -143,6 +143,25 @@ function DrawerRow({
   const name = stripPrefix(d.nickname, prefix);
 
   if (kind === "idle") {
+    // A drawer with a scan photo AND a design file has a layout to show
+    // (photo + pocket outlines) — useful when loading tools after delivery.
+    // Pre-design drawers stay inert so nobody lands on an empty page.
+    if (d.photo_url && l?.has_dxf) {
+      return (
+        <a
+          className="drow drow--idle"
+          href={`/labels/${d.id}`}
+          aria-label={`${name} — view drawer layout`}
+        >
+          <Thumb d={d} dim={false} />
+          <span className="drow__name">{name}</span>
+          <span className="pill pill--idle">{idleStatus(d, l)}</span>
+          <span className="drow__chev" aria-hidden>
+            ›
+          </span>
+        </a>
+      );
+    }
     return (
       <div className="drow drow--idle">
         <Thumb d={d} dim />
@@ -288,6 +307,8 @@ export default async function DashboardPage() {
         <p className="muted">
           Track each drawer from scan to installation. Drawers marked{" "}
           <b>Labels needed</b> require your engraving text before we cut the foam.
+          Open any drawer to see its scan photo with the pocket layout — handy when
+          loading tools.
         </p>
 
         {migrationPending ? (
