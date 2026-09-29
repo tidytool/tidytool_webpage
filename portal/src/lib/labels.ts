@@ -280,8 +280,8 @@ export function extractPockets(dxf: string): PocketSet | null {
 /** Normalized [x,y] photo-space corners, TL,TR,BR,BL — tidyCAM's shape. */
 export type CornerQuad = [number, number][];
 
-/** Pull reference_corners out of drawer.dimensions (top level or .correction). */
-export function referenceCorners(dimensions: unknown): CornerQuad | null {
+/** drawer.dimensions as an object — the column is `json`, so it may arrive string-encoded. */
+function dimensionsObject(dimensions: unknown): Record<string, unknown> | null {
   let d = dimensions;
   if (typeof d === "string") {
     try {
@@ -291,10 +291,11 @@ export function referenceCorners(dimensions: unknown): CornerQuad | null {
     }
   }
   if (typeof d !== "object" || d === null) return null;
-  const o = d as Record<string, unknown>;
-  const raw =
-    (o.reference_corners as unknown) ??
-    ((o.correction as Record<string, unknown> | undefined)?.reference_corners as unknown);
+  return d as Record<string, unknown>;
+}
+
+/** Validate a 4 × [x, y] array of finite numbers into a CornerQuad. */
+function toQuad(raw: unknown): CornerQuad | null {
   if (!Array.isArray(raw) || raw.length !== 4) return null;
   const quad: CornerQuad = [];
   for (const c of raw) {
@@ -305,6 +306,53 @@ export function referenceCorners(dimensions: unknown): CornerQuad | null {
     quad.push([x, y]);
   }
   return quad;
+}
+
+/** Pull reference_corners out of drawer.dimensions (top level or .correction). */
+export function referenceCorners(dimensions: unknown): CornerQuad | null {
+  const o = dimensionsObject(dimensions);
+  if (!o) return null;
+  const raw =
+    (o.reference_corners as unknown) ??
+    ((o.correction as Record<string, unknown> | undefined)?.reference_corners as unknown);
+  return toQuad(raw);
+}
+
+/**
+ * tidyCAD's admin_align_tool writes `correction.corner_points` in PIXEL space
+ * of the scan photo (TL,TR,BR,BL), not normalized. Most drawers carry only
+ * this form. Returns the quad only when it is clearly pixel-space (some
+ * coordinate > 1); an already-normalized corner_points array yields null so
+ * it can't be mistaken for pixels.
+ */
+export function pixelCorners(dimensions: unknown): CornerQuad | null {
+  const o = dimensionsObject(dimensions);
+  if (!o) return null;
+  const raw = (o.correction as Record<string, unknown> | undefined)?.corner_points as unknown;
+  const quad = toQuad(raw);
+  if (!quad) return null;
+  return quad.some(([x, y]) => x > 1 || y > 1) ? quad : null;
+}
+
+/**
+ * Convert pixel-space corners to normalized photo space using the photo's
+ * natural size. Returns null when the size is unusable or any corner lands
+ * outside [-0.05, 1.05] — that means the corners were measured on a photo of
+ * a different resolution and must not be trusted.
+ */
+export function pixelToNormalized(
+  px: CornerQuad,
+  size: { w: number; h: number },
+): CornerQuad | null {
+  if (!(size.w > 0) || !(size.h > 0)) return null;
+  const out: CornerQuad = [];
+  for (const [x, y] of px) {
+    const nx = x / size.w;
+    const ny = y / size.h;
+    if (nx < -0.05 || nx > 1.05 || ny < -0.05 || ny > 1.05) return null;
+    out.push([nx, ny]);
+  }
+  return out;
 }
 
 /**
