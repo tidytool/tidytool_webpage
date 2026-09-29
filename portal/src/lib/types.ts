@@ -153,11 +153,14 @@ export type MyLabelStatus = {
   has_dxf: boolean;
   labels_submitted_at: string | null;
   locked: boolean;
+  /** Engraved labels are a Professional/Premium tier feature (drawer.tier). */
+  labels_included: boolean;
 };
 
 /** True when the dashboard should show "Labels needed" for this drawer. */
 export function needsLabels(s: MyLabelStatus): boolean {
   return (
+    s.labels_included &&
     (s.stage_sort ?? 0) >= DESIGNED_SORT &&
     (s.stage_sort ?? 0) < APPROVED_SORT &&
     s.has_dxf &&

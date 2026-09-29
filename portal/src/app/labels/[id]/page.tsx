@@ -36,7 +36,8 @@ export default async function LabelsPage({
 
   const payload = data as DrawerLabelsData | null;
   const name = payload?.drawer.nickname || "Your TidyTool drawer";
-  const viewOnly = payload?.drawer.locked ?? false;
+  // Layout view when locked OR when the drawer has no engraved-label service (tier).
+  const viewOnly = (payload?.drawer.locked ?? false) || payload?.drawer.labels_included === false;
 
   return (
     <>
