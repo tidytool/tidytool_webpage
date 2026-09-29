@@ -67,6 +67,9 @@ export type DrawerLabelsData = {
     /** Server-computed: stage ≥ designed AND not locked/cancelled. */
     editable: boolean;
     is_staff: boolean;
+    /** Engraved labels are a Professional/Premium tier feature (drawer.tier).
+     *  Optional so an older get_drawer_labels payload still renders. */
+    labels_included?: boolean;
   };
   labels: LabelRowData[];
 };
@@ -95,7 +98,10 @@ export function LabelEditor({
   // Read-only "Drawer layout" once the drawer is locked. Keyed off `locked`,
   // not `!editable`: pre-design drawers are non-editable too but have no
   // layout to show yet.
-  const viewOnly = d.locked;
+  // Drawers without the engraved-label service never show the entry form —
+  // just the layout (photo + outlines + numbered pocket list).
+  const labelsIncluded = d.labels_included !== false;
+  const viewOnly = d.locked || !labelsIncluded;
   const dxfUrl = dxfPublicUrl(d.dxf_url);
 
   // Natural photo pixel size — the overlay draws in image-pixel space so
@@ -580,7 +586,7 @@ export function LabelEditor({
             Pockets
           </h2>
           <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-            {rows?.some((r) => r.na || r.text.trim())
+            {labelsIncluded && rows?.some((r) => r.na || r.text.trim())
               ? "Numbered to match the photo. Labels are what was engraved."
               : "Numbered to match the photo."}
           </p>
@@ -602,7 +608,9 @@ export function LabelEditor({
                     onMouseLeave={() => setHot(null)}
                   >
                     <span className="lbl-sw">{r.index}</span>
-                    {r.na ? (
+                    {!labelsIncluded ? (
+                      <span>Pocket {r.index}</span>
+                    ) : r.na ? (
                       <span className="muted">No label</span>
                     ) : text ? (
                       <span>{text}</span>

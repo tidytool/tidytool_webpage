@@ -211,6 +211,9 @@ function OrderGroup({
   const sorted = [...drawers].sort(
     (a, b) => KIND_ORDER[rowKind(labels.get(a.id))] - KIND_ORDER[rowKind(labels.get(b.id))],
   );
+  // Engraved labels are per-drawer (tier); the order's stepper shows the step
+  // as "not included" only when no drawer in the order has them.
+  const labelsIncluded = drawers.some((d) => labels.get(d.id)?.labels_included);
 
   return (
     <section className="card ogroup">
@@ -225,7 +228,7 @@ function OrderGroup({
             <span className="badge badge--warn">On hold</span>
           ) : null}
         </div>
-        {tracker ? <OrderTracker t={tracker} /> : null}
+        {tracker ? <OrderTracker t={tracker} labelsIncluded={labelsIncluded} /> : null}
       </div>
       <div className="ogroup__rows">
         {sorted.map((d) => (
@@ -297,6 +300,9 @@ export default async function DashboardPage() {
     return l ? needsLabels(l) : false;
   }).length;
   const submittedCount = drawers.filter((d) => !!labels.get(d.id)?.labels_submitted_at).length;
+  // Whether any visible drawer carries the engraved-label service at all —
+  // drives the intro copy and the label banners.
+  const anyLabels = drawers.some((d) => !!labels.get(d.id)?.labels_included);
 
   return (
     <>
@@ -305,8 +311,13 @@ export default async function DashboardPage() {
         <p className="eyebrow">Customer portal</p>
         <h1>Your orders</h1>
         <p className="muted">
-          Track each drawer from scan to installation. Drawers marked{" "}
-          <b>Labels needed</b> require your engraving text before we cut the foam.
+          Track each drawer from scan to installation.{" "}
+          {anyLabels ? (
+            <>
+              Drawers marked <b>Labels needed</b> require your engraving text before we
+              cut the foam.{" "}
+            </>
+          ) : null}
           Open any drawer to see its scan photo with the pocket layout — handy when
           loading tools.
         </p>
@@ -354,7 +365,7 @@ export default async function DashboardPage() {
                   before the foam is cut.
                 </span>
               </div>
-            ) : submittedCount > 0 ? (
+            ) : anyLabels && submittedCount > 0 ? (
               <div className="action-banner action-banner--done" role="status">
                 <b>All labels submitted</b>{" "}
                 <span className="muted">
