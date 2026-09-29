@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:pricing": "npx -y tsx --test src/lib/pricing/*.test.ts"
+    "test:pricing": "npx -y tsx --test src/lib/pricing/*.test.ts",
+    "test:labels": "npx -y tsx --test src/lib/labels.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
