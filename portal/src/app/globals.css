@@ -514,6 +514,27 @@ a.drow:hover { background: var(--c-surface-2); text-decoration: none; }
   .drow__chev { display: none; }
 }
 
+/* ---- Drawer-to-drawer navigation (/labels/[id]) ---- */
+.dnav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin: -0.5rem -0.25rem 1rem; padding: 0.55rem 0.25rem;
+  background: color-mix(in srgb, var(--c-bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--c-border);
+}
+.dnav__back { color: var(--c-text-dim); font-weight: 600; font-size: 0.9rem; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnav__back:hover { color: var(--c-text); }
+.dnav__steps { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
+.dnav__btn { text-decoration: none; max-width: 11rem; }
+.dnav__btn--off { opacity: 0.35; pointer-events: none; }
+.dnav__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnav__count { font-size: 0.8rem; color: var(--c-text-dim); white-space: nowrap; }
+@media (max-width: 600px) {
+  .dnav__name { display: none; }          /* phone: arrows + "3 of 9" only */
+  .dnav__btn { max-width: none; padding: 0 0.6rem; }
+}
+
 /* ---- Customer tool labels (/labels/[id]) ---- */
 
 .lbl-layout {

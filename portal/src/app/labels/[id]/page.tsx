@@ -3,6 +3,9 @@ import { Header } from "@/components/Header";
 import { LabelEditor, type DrawerLabelsData } from "@/components/LabelEditor";
 import { createClient } from "@/lib/supabase/server";
 import { getClaims } from "@/lib/supabase/auth";
+import { DrawerNav, type DrawerNavItem } from "@/components/DrawerNav";
+import { orderTitle, stripPrefixWords } from "@/lib/order-title";
+import type { MyDrawer, MyLabelStatus } from "@/lib/types";
 
 /**
  * /labels/[id] — name the tools in one drawer, or (once the drawer is locked
@@ -38,20 +41,29 @@ export default async function LabelsPage({
   const name = payload?.drawer.nickname || "Your TidyTool drawer";
   // Layout view when locked OR when the drawer has no engraved-label service (tier).
   const viewOnly = (payload?.drawer.locked ?? false) || payload?.drawer.labels_included === false;
+  const layoutOnly = payload?.drawer.labels_included === false;
+
+  // Sibling drawers in the same order, for prev/next + the back-to-order link.
+  // Customers: get_my_drawers (RLS-free RPC). Staff opening a customer's
+  // drawer: read the table directly (staff select policy).
+  const nav = await siblingNav(supabase, id, !!payload?.drawer.is_staff);
 
   return (
     <>
       <Header email={email} />
       <main className="wrap wrap--wide">
-        <p style={{ margin: "0 0 1rem" }}>
-          <a href="/" className="muted">
-            ← All orders
-          </a>
-        </p>
+        <DrawerNav
+          currentId={id}
+          orderHref={nav.orderId ? `/#order-${nav.orderId}` : "/"}
+          orderTitle={nav.title}
+          items={nav.items}
+        />
         <p className="eyebrow">{viewOnly ? "Drawer layout" : "Tool labels"}</p>
-        <h1>{name}</h1>
+        <h1>{nav.shortName ?? name}</h1>
         <p className="muted" style={{ maxWidth: "64ch" }}>
-          {viewOnly ? (
+          {layoutOnly ? (
+            <>Your scan photo with each pocket outlined — use it to see where each tool goes.</>
+          ) : viewOnly ? (
             <>
               Your scan photo with each pocket outlined and numbered. Match the
               numbers to the list to see which tool goes where.
@@ -79,4 +91,88 @@ export default async function LabelsPage({
       </main>
     </>
   );
+}
+
+type SiblingNav = {
+  orderId: string | null;
+  title: string;
+  /** This drawer's name minus the order's shared prefix (what the dashboard row shows). */
+  shortName: string | null;
+  items: DrawerNavItem[];
+};
+
+async function siblingNav(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  isStaff: boolean,
+): Promise<SiblingNav> {
+  const empty: SiblingNav = { orderId: null, title: "All orders", shortName: null, items: [] };
+  try {
+    const [{ data: mine }, { data: status }] = await Promise.all([
+      supabase.rpc("get_my_drawers"),
+      supabase.rpc("get_my_label_status"),
+    ]);
+    let drawers = ((mine ?? []) as MyDrawer[]).map((d) => ({
+      id: d.id,
+      nickname: d.nickname,
+      order_id: d.order_id,
+      photo_url: d.photo_url,
+      project_name: d.project_name,
+      dxf: false,
+    }));
+    const hasDxf = new Map(((status ?? []) as MyLabelStatus[]).map((l) => [l.drawer_id, l.has_dxf]));
+    drawers = drawers.map((d) => ({ ...d, dxf: hasDxf.get(d.id) ?? false }));
+
+    let me = drawers.find((d) => d.id === id);
+    if (!me && isStaff) {
+      const { data: row } = await supabase
+        .from("drawer")
+        .select("id, order_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (row?.order_id) {
+        const { data: sibs } = await supabase
+          .from("drawer")
+          .select("id, nickname, order_id, photo_url, dxf_url, order:order_id(project_name)")
+          .eq("order_id", row.order_id)
+          .neq("state", "cancelled")
+          .order("created_at");
+        drawers = ((sibs ?? []) as unknown as {
+          id: string;
+          nickname: string | null;
+          order_id: string;
+          photo_url: string | null;
+          dxf_url: string | null;
+          order: { project_name: string | null } | null;
+        }[]).map((d) => ({
+          id: d.id,
+          nickname: d.nickname,
+          order_id: d.order_id,
+          photo_url: d.photo_url,
+          project_name: d.order?.project_name ?? null,
+          dxf: !!d.dxf_url,
+        }));
+        me = drawers.find((d) => d.id === id);
+      }
+    }
+    if (!me || !me.order_id) return empty;
+
+    const inOrder = drawers.filter((d) => d.order_id === me!.order_id);
+    const { title, prefixWords } = orderTitle({
+      projectName: me.project_name,
+      drawerNames: inOrder.map((d) => d.nickname),
+    });
+    // Only drawers that have a layout to show take part in prev/next.
+    const items: DrawerNavItem[] = inOrder
+      .filter((d) => d.id === id || (d.photo_url && d.dxf))
+      .map((d) => ({ id: d.id, name: stripPrefixWords(d.nickname, prefixWords) }));
+    return {
+      orderId: me.order_id,
+      title: title === "Your order" ? "All orders" : title,
+      shortName: prefixWords ? stripPrefixWords(me.nickname, prefixWords) : null,
+      items,
+    };
+  } catch {
+    return empty;
+  }
 }
