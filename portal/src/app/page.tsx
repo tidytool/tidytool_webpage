@@ -8,8 +8,11 @@ import {
   type MyLabelStatus,
   type OrderTrackerData,
   APPROVED_SORT,
+  DELIVERED_SORT,
   needsLabels,
 } from "@/lib/types";
+import { orderTitle, stripPrefixWords } from "@/lib/order-title";
+import { thumbUrl } from "@/lib/thumb";
 
 /**
  * Customer dashboard — a WORK QUEUE, not a status wall (2026-08 UX pass).
@@ -40,32 +43,6 @@ const CUSTOMER_STATUS: Record<string, string> = {
   approved_by_qualityctrl: "In production",
   received_by_fabricator: "In production",
 };
-
-/**
- * The longest " - "-separated name prefix shared by EVERY drawer in a group.
- * tidyCAM names drawers "Set Name - Drawer"; the shared part becomes the
- * order heading so rows can read just "Dial Indicators".
- */
-function sharedPrefixTokens(names: (string | null)[]): string[] {
-  if (names.length < 2 || names.some((n) => !n)) return [];
-  const split = names.map((n) => (n as string).split(" - ").map((t) => t.trim()));
-  let prefix = split[0].slice(0, -1); // never consume a full name
-  for (const tokens of split.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && i < tokens.length - 1 && prefix[i] === tokens[i]) i++;
-    prefix = prefix.slice(0, i);
-    if (prefix.length === 0) return [];
-  }
-  return prefix;
-}
-
-function stripPrefix(name: string | null, prefix: string[]): string {
-  if (!name) return "Drawer";
-  if (prefix.length === 0) return name;
-  const tokens = name.split(" - ").map((t) => t.trim());
-  const rest = tokens.slice(prefix.length).join(" - ");
-  return rest || name;
-}
 
 type RowKind = "needed" | "submitted" | "idle";
 
@@ -120,9 +97,11 @@ function Thumb({ d, dim }: { d: MyDrawer; dim: boolean }) {
     // eslint-disable-next-line @next/next/no-img-element
     <img
       className="drow__thumb"
-      src={d.photo_url}
+      src={thumbUrl(d.photo_url, 160, 120)}
       alt=""
       loading="lazy"
+      width={64}
+      height={48}
       style={dim ? { opacity: 0.55 } : undefined}
     />
   ) : (
@@ -133,14 +112,14 @@ function Thumb({ d, dim }: { d: MyDrawer; dim: boolean }) {
 function DrawerRow({
   d,
   l,
-  prefix,
+  prefixWords,
 }: {
   d: MyDrawer;
   l: MyLabelStatus | undefined;
-  prefix: string[];
+  prefixWords: number;
 }) {
   const kind = rowKind(l);
-  const name = stripPrefix(d.nickname, prefix);
+  const name = stripPrefixWords(d.nickname, prefixWords);
 
   if (kind === "idle") {
     // A drawer with a scan photo AND a design file has a layout to show
@@ -192,21 +171,27 @@ function DrawerRow({
 }
 
 function OrderGroup({
+  orderId,
   drawers,
   labels,
   tracker,
 }: {
+  orderId: string;
   drawers: MyDrawer[];
   labels: Map<string, MyLabelStatus>;
   tracker: OrderTrackerData | undefined;
 }) {
-  const prefix = sharedPrefixTokens(drawers.map((d) => d.nickname));
   const received = fmtDate(tracker?.steps?.[0]?.entered_at);
-  const title =
-    drawers[0]?.project_name ||
-    (prefix.length ? prefix.join(" - ") : received ? `Order — received ${received}` : "Your order");
+  const { title, prefixWords } = orderTitle({
+    projectName: drawers[0]?.project_name,
+    drawerNames: drawers.map((d) => d.nickname),
+    received,
+  });
   const total = tracker?.completion?.total ?? drawers.length;
   const delivered = tracker?.completion?.delivered ?? 0;
+  // Everything delivered → the stepper is history. One line, full stepper on demand.
+  const allDelivered = total > 0 && delivered >= total && tracker?.exception?.state !== "cancelled";
+  const deliveredOn = fmtDate(tracker?.steps?.find((st) => st.step === 7)?.entered_at);
 
   const sorted = [...drawers].sort(
     (a, b) => KIND_ORDER[rowKind(labels.get(a.id))] - KIND_ORDER[rowKind(labels.get(b.id))],
@@ -216,23 +201,39 @@ function OrderGroup({
   const labelsIncluded = drawers.some((d) => labels.get(d.id)?.labels_included);
 
   return (
-    <section className="card ogroup">
+    <section className="card ogroup" id={`order-${orderId}`}>
       <div className="ogroup__head">
         <div className="ogroup__title">
           <h2 style={{ margin: 0 }}>{title}</h2>
           <span className="ogroup__meta num">
-            {prefix.length && received ? `Received ${received} · ` : ""}
-            {total} drawer{total === 1 ? "" : "s"} · {delivered} of {total} delivered
+            {prefixWords && received ? `Received ${received} · ` : ""}
+            {total} drawer{total === 1 ? "" : "s"} ·{" "}
+            {allDelivered ? (
+              <b className="ogroup__done">Delivered{deliveredOn ? ` ${deliveredOn}` : ""}</b>
+            ) : (
+              <>
+                {delivered} of {total} delivered
+              </>
+            )}
           </span>
           {tracker?.exception?.state === "on_hold" ? (
             <span className="badge badge--warn">On hold</span>
           ) : null}
         </div>
-        {tracker ? <OrderTracker t={tracker} labelsIncluded={labelsIncluded} /> : null}
+        {tracker ? (
+          allDelivered ? (
+            <details className="ogroup__history">
+              <summary>Order history</summary>
+              <OrderTracker t={tracker} labelsIncluded={labelsIncluded} />
+            </details>
+          ) : (
+            <OrderTracker t={tracker} labelsIncluded={labelsIncluded} />
+          )
+        ) : null}
       </div>
       <div className="ogroup__rows">
         {sorted.map((d) => (
-          <DrawerRow key={d.id} d={d} l={labels.get(d.id)} prefix={prefix} />
+          <DrawerRow key={d.id} d={d} l={labels.get(d.id)} prefixWords={prefixWords} />
         ))}
       </div>
     </section>
@@ -303,6 +304,10 @@ export default async function DashboardPage() {
   // Whether any visible drawer carries the engraved-label service at all —
   // drives the intro copy and the label banners.
   const anyLabels = drawers.some((d) => !!labels.get(d.id)?.labels_included);
+  // Nothing in flight → the useful next action is another drawer, not a status wall.
+  const everythingDelivered =
+    drawers.length > 0 &&
+    drawers.every((d) => (labels.get(d.id)?.stage_sort ?? 0) >= DELIVERED_SORT);
 
   return (
     <>
@@ -375,9 +380,20 @@ export default async function DashboardPage() {
               </div>
             ) : null}
 
+            {everythingDelivered ? (
+              <div className="action-banner action-banner--done" role="status">
+                <b>All delivered.</b>{" "}
+                <span className="muted">
+                  Open any drawer below for its layout. Need another drawer or cabinet organized?{" "}
+                  <a href="https://thetidytool.com/#quote">Request a quote →</a>
+                </span>
+              </div>
+            ) : null}
+
             {orderIds.map((orderId) => (
               <OrderGroup
                 key={orderId}
+                orderId={orderId}
                 drawers={byOrder.get(orderId) ?? []}
                 labels={labels}
                 tracker={trackers.get(orderId)}
@@ -393,7 +409,7 @@ export default async function DashboardPage() {
                 </div>
                 <div className="ogroup__rows">
                   {loose.map((d) => (
-                    <DrawerRow key={d.id} d={d} l={labels.get(d.id)} prefix={[]} />
+                    <DrawerRow key={d.id} d={d} l={labels.get(d.id)} prefixWords={0} />
                   ))}
                 </div>
               </section>

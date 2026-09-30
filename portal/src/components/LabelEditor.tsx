@@ -102,6 +102,25 @@ export function LabelEditor({
   // just the layout (photo + outlines + numbered pocket list).
   const labelsIncluded = d.labels_included !== false;
   const viewOnly = d.locked || !labelsIncluded;
+  // Pocket numbers only carry meaning when they match engraved labels; without
+  // labels they're off by default and the customer can flip them on.
+  const [showNumbers, setShowNumbers] = useState(labelsIncluded);
+  // Full-screen lightbox for loading tools from a phone held over the drawer.
+  const [zoomed, setZoomed] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
+  useEffect(() => {
+    if (!zoomed) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZoomed(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [zoomed]);
   const dxfUrl = dxfPublicUrl(d.dxf_url);
 
   // Natural photo pixel size — the overlay draws in image-pixel space so
@@ -180,6 +199,29 @@ export function LabelEditor({
     // is intentional; live edits own the state after that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pocketSet]);
+
+  // Numbers shown on the photo/plan. With engraved labels they MUST be
+  // tidyCAD's numbers (they match what was engraved). Without labels those
+  // numbers are arbitrary object IDs, so renumber in reading order
+  // (top-left → bottom-right; DXF is y-up) so they at least make spatial sense.
+  const displayIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!pocketSet) return m;
+    if (labelsIncluded) {
+      for (const p of pocketSet.pockets) m.set(p.key, p.index);
+      return m;
+    }
+    const { minY, maxY } = pocketSet.bounds;
+    const band = Math.max((maxY - minY) / 6, 1e-6);
+    const sorted = [...pocketSet.pockets].sort((a, b) => {
+      const ra = Math.floor((maxY - a.cy) / band);
+      const rb = Math.floor((maxY - b.cy) / band);
+      return ra - rb || a.cx - b.cx;
+    });
+    sorted.forEach((p, i) => m.set(p.key, i + 1));
+    return m;
+  }, [pocketSet, labelsIncluded]);
+  const num = (key: string, fallback: number) => displayIndex.get(key) ?? fallback;
 
   const designChanged = useMemo(
     () =>
@@ -330,7 +372,7 @@ export function LabelEditor({
   // While aligning, the draft quad wins so staff see the outlines follow.
   const quad = aligning ? alignQuad : savedQuad;
 
-  const badgeR = nat ? Math.max(10, Math.min(nat.w, nat.h) * 0.018) : 12;
+  const badgeR = nat ? Math.max(9, Math.min(nat.w, nat.h) * 0.013) : 10;
 
   function overlayPath(points: [number, number][], q: CornerQuad): string {
     if (!pocketSet || !nat) return "";
@@ -372,7 +414,7 @@ export function LabelEditor({
               className={`lbl-pocket${hot === p.key ? " lbl-pocket--hot" : ""}`}
               role="button"
               tabIndex={0}
-              aria-label={`Pocket ${p.index}`}
+              aria-label={`Pocket ${num(p.key, p.index)}`}
               onMouseEnter={() => setHot(p.key)}
               onMouseLeave={() => setHot(null)}
               onFocus={() => setHot(p.key)}
@@ -392,10 +434,14 @@ export function LabelEditor({
                 stroke={col}
                 strokeWidth={hot === p.key ? 0.14 : 0.06}
               />
-              <circle cx={p.cx} cy={-p.cy} r={0.55} fill="#fff" stroke={col} strokeWidth={0.08} />
-              <text x={p.cx} y={-p.cy} textAnchor="middle" dominantBaseline="central" fontSize={0.6} fontWeight={800} fill="var(--c-text)">
-                {p.index}
-              </text>
+              {showNumbers ? (
+                <>
+                  <circle cx={p.cx} cy={-p.cy} r={0.55} fill="#fff" fillOpacity={0.85} stroke={col} strokeWidth={0.08} />
+                  <text x={p.cx} y={-p.cy} textAnchor="middle" dominantBaseline="central" fontSize={0.6} fontWeight={800} fill="var(--c-text)">
+                    {num(p.key, p.index)}
+                  </text>
+                </>
+              ) : null}
             </g>
           );
         })}
@@ -404,12 +450,98 @@ export function LabelEditor({
   }
 
   const showOverlay = dxfState === "ready" && !!quad && !!d.photo_url;
+  const layoutOnly = viewOnly && !labelsIncluded; // photo + outlines is the whole job
   const showAlignPrompt =
     d.is_staff && !savedQuad && cornersResolved && dxfState === "ready" && !!d.photo_url;
   const showRealign = d.is_staff && !!savedQuad && dxfState === "ready" && !!d.photo_url && !aligning;
 
+  const pocketOverlay =
+    (showOverlay || aligning) && pocketSet && quad && nat ? (
+      <svg className="lbl-overlay" viewBox={`0 0 ${nat.w} ${nat.h}`} preserveAspectRatio="none">
+        {pocketSet.pockets.map((p) => {
+          const na = rows?.find((r) => r.key === p.key)?.na;
+          const col = na ? "#9AA6AE" : pocketColor(p.index);
+          const [bx, by] = dxfToPhoto(p.cx, p.cy, pocketSet.bounds, quad);
+          return (
+            <g
+              key={p.key}
+              className={`lbl-pocket${hot === p.key ? " lbl-pocket--hot" : ""}`}
+              role={aligning ? undefined : "button"}
+              tabIndex={aligning ? undefined : 0}
+              aria-label={`Pocket ${num(p.key, p.index)}`}
+              onMouseEnter={() => setHot(p.key)}
+              onMouseLeave={() => setHot(null)}
+              onFocus={() => setHot(p.key)}
+              onBlur={() => setHot(null)}
+              onClick={() => (aligning ? undefined : jumpTo(p.key))}
+              onKeyDown={(e) => {
+                if (!aligning && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  jumpTo(p.key);
+                }
+              }}
+            >
+              <path
+                d={overlayPath(p.points, quad)}
+                fill={col}
+                fillOpacity={hot === p.key ? 0.25 : 0.001}
+                stroke={col}
+                strokeWidth={hot === p.key ? 5 : 3}
+                strokeDasharray={na ? "6 4" : undefined}
+                vectorEffect="non-scaling-stroke"
+              />
+              {showNumbers ? (
+                <>
+                  <circle
+                    cx={bx * nat.w}
+                    cy={by * nat.h}
+                    r={badgeR}
+                    fill="#fff"
+                    fillOpacity={0.85}
+                    stroke={col}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <text
+                    x={bx * nat.w}
+                    y={by * nat.h}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={badgeR * 1.15}
+                    fontWeight={800}
+                    fill="#1E2A33"
+                  >
+                    {num(p.key, p.index)}
+                  </text>
+                </>
+              ) : null}
+            </g>
+          );
+        })}
+        {aligning
+          ? alignQuad.map(([x, y], i) => (
+              <circle
+                key={i}
+                cx={x * nat.w}
+                cy={y * nat.h}
+                r={badgeR * 1.4}
+                fill="rgba(232,49,42,0.85)"
+                stroke="#fff"
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+                style={{ cursor: "grab" }}
+                onPointerDown={(e) => {
+                  (e.target as Element).setPointerCapture?.(e.pointerId);
+                  dragIdx.current = i;
+                }}
+              />
+            ))
+          : null}
+      </svg>
+    ) : null;
+
   return (
-    <div className="lbl-layout">
+    <div className={`lbl-layout${layoutOnly ? " lbl-layout--single" : ""}`}>
       {/* ---------------- visual ---------------- */}
       <section className="card">
         {d.photo_url ? (
@@ -427,88 +559,23 @@ export function LabelEditor({
               alt={`Top-down photo of ${d.nickname || "your drawer"}`}
               onLoad={(e) => readNat(e.currentTarget)}
             />
-            {(showOverlay || aligning) && pocketSet && quad && nat ? (
-              <svg className="lbl-overlay" viewBox={`0 0 ${nat.w} ${nat.h}`} preserveAspectRatio="none">
-                {pocketSet.pockets.map((p) => {
-                  const na = rows?.find((r) => r.key === p.key)?.na;
-                  const col = na ? "#9AA6AE" : pocketColor(p.index);
-                  const [bx, by] = dxfToPhoto(p.cx, p.cy, pocketSet.bounds, quad);
-                  return (
-                    <g
-                      key={p.key}
-                      className={`lbl-pocket${hot === p.key ? " lbl-pocket--hot" : ""}`}
-                      role={aligning ? undefined : "button"}
-                      tabIndex={aligning ? undefined : 0}
-                      aria-label={`Pocket ${p.index}`}
-                      onMouseEnter={() => setHot(p.key)}
-                      onMouseLeave={() => setHot(null)}
-                      onFocus={() => setHot(p.key)}
-                      onBlur={() => setHot(null)}
-                      onClick={() => (aligning ? undefined : jumpTo(p.key))}
-                      onKeyDown={(e) => {
-                        if (!aligning && (e.key === "Enter" || e.key === " ")) {
-                          e.preventDefault();
-                          jumpTo(p.key);
-                        }
-                      }}
-                    >
-                      <path
-                        d={overlayPath(p.points, quad)}
-                        fill={col}
-                        fillOpacity={hot === p.key ? 0.25 : 0.001}
-                        stroke={col}
-                        strokeWidth={hot === p.key ? 5 : 3}
-                        strokeDasharray={na ? "6 4" : undefined}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                      <circle
-                        cx={bx * nat.w}
-                        cy={by * nat.h}
-                        r={badgeR}
-                        fill="#fff"
-                        stroke={col}
-                        strokeWidth={2.5}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                      <text
-                        x={bx * nat.w}
-                        y={by * nat.h}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize={badgeR * 1.1}
-                        fontWeight={800}
-                        fill="#1E2A33"
-                      >
-                        {p.index}
-                      </text>
-                    </g>
-                  );
-                })}
-                {aligning
-                  ? alignQuad.map(([x, y], i) => (
-                      <circle
-                        key={i}
-                        cx={x * nat.w}
-                        cy={y * nat.h}
-                        r={badgeR * 1.4}
-                        fill="rgba(232,49,42,0.85)"
-                        stroke="#fff"
-                        strokeWidth={2}
-                        vectorEffect="non-scaling-stroke"
-                        style={{ cursor: "grab" }}
-                        onPointerDown={(e) => {
-                          (e.target as Element).setPointerCapture?.(e.pointerId);
-                          dragIdx.current = i;
-                        }}
-                      />
-                    ))
-                  : null}
-              </svg>
-            ) : null}
+            {pocketOverlay}
           </div>
         ) : (
-          <div className="lbl-photo lbl-photo--empty">No photo for this drawer yet</div>
+          <div className="lbl-photo lbl-photo--empty">No photo for this drawer yet.</div>
         )}
+
+        {d.photo_url && !aligning ? (
+          <div className="lbl-tools">
+            <label className="lbl-tools__toggle">
+              <input type="checkbox" checked={showNumbers} onChange={(e) => setShowNumbers(e.target.checked)} />
+              Numbers
+            </label>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setZoomed(true)}>
+              Full screen
+            </button>
+          </div>
+        ) : null}
 
         {aligning ? (
           <div style={{ marginTop: "0.7rem" }}>
@@ -546,9 +613,11 @@ export function LabelEditor({
         {!hasCornerData && !d.is_staff && dxfState === "ready" ? (
           <>
             <p className="muted" style={{ fontSize: "0.85rem", margin: "0.7rem 0 0.4rem" }}>
-              {viewOnly
-                ? "The photo above is from your scan; the drawing shows where each pocket sits in your foam insert. Match the numbers to the list."
-                : "Match the numbers below to your drawer photo above — the drawing shows where each pocket sits."}
+              {layoutOnly
+                ? "Your scan photo; the drawing below shows where each pocket sits in your foam insert."
+                : viewOnly
+                  ? "The photo above is from your scan; the drawing shows where each pocket sits in your foam insert. Match the numbers to the list."
+                  : "Match the numbers below to your drawer photo above — the drawing shows where each pocket sits."}
             </p>
             {planView()}
           </>
@@ -572,15 +641,17 @@ export function LabelEditor({
 
         {showOverlay && !aligning ? (
           <p className="muted" style={{ fontSize: "0.82rem", margin: "0.7rem 0 0" }}>
-            {viewOnly
-              ? "The photo above is from your scan — each outline is a pocket in your foam insert. Select a pocket to jump to it in the list."
-              : "Top-down view from your scan — outlines show where each pocket will be cut. Select a pocket to jump to its label."}
+            {layoutOnly
+              ? "Your scan photo — each outline is a pocket cut in your foam insert. Use Full screen to zoom in while loading tools."
+              : viewOnly
+                ? "The photo above is from your scan — each outline is a pocket in your foam insert. Select a pocket to jump to it in the list."
+                : "Top-down view from your scan — outlines show where each pocket will be cut. Select a pocket to jump to its label."}
           </p>
         ) : null}
       </section>
 
       {/* ---------------- entries ---------------- */}
-      {viewOnly ? (
+      {layoutOnly ? null : viewOnly ? (
         <section className="card" aria-labelledby="pocketsHeading">
           <h2 id="pocketsHeading" style={{ fontSize: "1.1rem", margin: "0 0 0.25rem" }}>
             Pockets
@@ -776,6 +847,39 @@ export function LabelEditor({
         ) : null}
       </section>
       )}
+
+      {zoomed && d.photo_url ? (
+        <div className="lbl-lightbox" role="dialog" aria-modal="true" aria-label={`${d.nickname || "Drawer"} — full screen`}>
+          <div className="lbl-lightbox__bar">
+            <span className="lbl-lightbox__title">{d.nickname || "Drawer"}</span>
+            <div className="lbl-lightbox__controls">
+              <label className="lbl-tools__toggle">
+                <input type="checkbox" checked={showNumbers} onChange={(e) => setShowNumbers(e.target.checked)} />
+                Numbers
+              </label>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setZoomScale((z) => Math.max(1, z - 0.5))} aria-label="Zoom out">
+                −
+              </button>
+              <span className="num" aria-live="polite">{zoomScale}×</span>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setZoomScale((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">
+                +
+              </button>
+              <button type="button" className="btn btn--primary btn--sm" onClick={() => setZoomed(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+          <div className="lbl-lightbox__scroll">
+            <div className="lbl-lightbox__inner" style={{ width: `${zoomScale * 100}%` }}>
+              <div className="lbl-photo-box">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="lbl-photo" src={d.photo_url} alt={`Top-down photo of ${d.nickname || "your drawer"}`} />
+                {pocketOverlay}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

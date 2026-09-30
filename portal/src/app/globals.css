@@ -392,6 +392,18 @@ dialog.modal::backdrop { background: rgba(16, 24, 32, 0.45); }
 /* ==========================================================================
    Pizza tracker — customer order progress stepper (OrderTracker.tsx).
    ========================================================================== */
+/* Delivered orders: the stepper collapses to a one-line summary + disclosure. */
+.ogroup__done { color: #1e8e3e; font-weight: 700; }
+.ogroup__history { margin-top: 0.35rem; }
+.ogroup__history > summary {
+  cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--c-text-dim);
+  list-style: none; display: inline-flex; align-items: center; gap: 0.35rem; user-select: none;
+}
+.ogroup__history > summary::-webkit-details-marker { display: none; }
+.ogroup__history > summary::before { content: "▸"; font-size: 0.7rem; transition: transform 0.15s; }
+.ogroup__history[open] > summary::before { transform: rotate(90deg); }
+.ogroup__history[open] > summary { margin-bottom: 0.5rem; }
+
 .tracker { display: flex; margin-top: 1rem; }
 .tracker__step { flex: 1; min-width: 0; text-align: center; position: relative; padding-top: 1.15rem; }
 .tracker__step::before {
@@ -502,6 +514,27 @@ a.drow:hover { background: var(--c-surface-2); text-decoration: none; }
   .drow__chev { display: none; }
 }
 
+/* ---- Drawer-to-drawer navigation (/labels/[id]) ---- */
+.dnav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin: -0.5rem -0.25rem 1rem; padding: 0.55rem 0.25rem;
+  background: color-mix(in srgb, var(--c-bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--c-border);
+}
+.dnav__back { color: var(--c-text-dim); font-weight: 600; font-size: 0.9rem; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnav__back:hover { color: var(--c-text); }
+.dnav__steps { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
+.dnav__btn { text-decoration: none; max-width: 11rem; }
+.dnav__btn--off { opacity: 0.35; pointer-events: none; }
+.dnav__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnav__count { font-size: 0.8rem; color: var(--c-text-dim); white-space: nowrap; }
+@media (max-width: 600px) {
+  .dnav__name { display: none; }          /* phone: arrows + "3 of 9" only */
+  .dnav__btn { max-width: none; padding: 0 0.6rem; }
+}
+
 /* ---- Customer tool labels (/labels/[id]) ---- */
 
 .lbl-layout {
@@ -543,6 +576,45 @@ a.drow:hover { background: var(--c-surface-2); text-decoration: none; }
 .lbl-pocket { cursor: pointer; }
 .lbl-plan { width: 100%; height: auto; display: block; margin-top: 0.4rem; }
 .lbl-plan text { pointer-events: none; user-select: none; }
+
+/* Layout-only mode (no engraved labels): the photo IS the page. One column,
+   capped so a 2048px scan doesn't sprawl on wide monitors. */
+.lbl-layout--single { grid-template-columns: minmax(0, 1fr); max-width: 880px; }
+@media (min-width: 901px) {
+  .lbl-layout--single > section:first-child { position: static; }
+}
+.lbl-tools {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin-top: 0.6rem; flex-wrap: wrap;
+}
+.lbl-tools__toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.85rem; font-weight: 600; color: var(--c-text-dim); cursor: pointer; user-select: none;
+}
+.lbl-tools__toggle input { width: 1rem; height: 1rem; accent-color: var(--c-accent); margin: 0; }
+
+/* Full-screen lightbox — for a phone held over the drawer while loading tools.
+   Pinch-zoom is left to the browser; the +/− buttons scale the image width and
+   the container scrolls, which works on every device. */
+.lbl-lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0f1418; color: #fff;
+  display: flex; flex-direction: column;
+}
+.lbl-lightbox__bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.6rem 0.9rem; padding-top: max(0.6rem, env(safe-area-inset-top));
+  background: rgba(15, 20, 24, 0.92); border-bottom: 1px solid rgba(255,255,255,0.12);
+  flex-wrap: wrap;
+}
+.lbl-lightbox__title { font-weight: 700; font-size: 0.95rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lbl-lightbox__controls { display: inline-flex; align-items: center; gap: 0.45rem; margin-left: auto; }
+.lbl-lightbox__controls .lbl-tools__toggle { color: #dfe6ec; }
+.lbl-lightbox__controls .btn--ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,0.35); box-shadow: none; }
+.lbl-lightbox__controls .btn--ghost:hover { background: rgba(255,255,255,0.1); }
+.lbl-lightbox__scroll { flex: 1; overflow: auto; touch-action: pinch-zoom pan-x pan-y; -webkit-overflow-scrolling: touch; }
+.lbl-lightbox__inner { min-width: 100%; padding: 0.5rem; box-sizing: border-box; }
+.lbl-lightbox .lbl-photo { border: none; border-radius: 6px; }
 
 .lbl-banner {
   display: flex;

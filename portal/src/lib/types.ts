@@ -142,6 +142,8 @@ export const DESIGNED_SORT = 40;
  * with status_def.
  */
 export const APPROVED_SORT = 70;
+/** status_def sort_order for drawer stage 'delivered' (labels lock at in_production = 80). */
+export const DELIVERED_SORT = 110;
 
 /**
  * Row from get_my_label_status() — per-drawer tool-label state for the
