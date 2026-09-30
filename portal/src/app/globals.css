@@ -544,6 +544,45 @@ a.drow:hover { background: var(--c-surface-2); text-decoration: none; }
 .lbl-plan { width: 100%; height: auto; display: block; margin-top: 0.4rem; }
 .lbl-plan text { pointer-events: none; user-select: none; }
 
+/* Layout-only mode (no engraved labels): the photo IS the page. One column,
+   capped so a 2048px scan doesn't sprawl on wide monitors. */
+.lbl-layout--single { grid-template-columns: minmax(0, 1fr); max-width: 880px; }
+@media (min-width: 901px) {
+  .lbl-layout--single > section:first-child { position: static; }
+}
+.lbl-tools {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin-top: 0.6rem; flex-wrap: wrap;
+}
+.lbl-tools__toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.85rem; font-weight: 600; color: var(--c-text-dim); cursor: pointer; user-select: none;
+}
+.lbl-tools__toggle input { width: 1rem; height: 1rem; accent-color: var(--c-accent); margin: 0; }
+
+/* Full-screen lightbox — for a phone held over the drawer while loading tools.
+   Pinch-zoom is left to the browser; the +/− buttons scale the image width and
+   the container scrolls, which works on every device. */
+.lbl-lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0f1418; color: #fff;
+  display: flex; flex-direction: column;
+}
+.lbl-lightbox__bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.6rem 0.9rem; padding-top: max(0.6rem, env(safe-area-inset-top));
+  background: rgba(15, 20, 24, 0.92); border-bottom: 1px solid rgba(255,255,255,0.12);
+  flex-wrap: wrap;
+}
+.lbl-lightbox__title { font-weight: 700; font-size: 0.95rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lbl-lightbox__controls { display: inline-flex; align-items: center; gap: 0.45rem; margin-left: auto; }
+.lbl-lightbox__controls .lbl-tools__toggle { color: #dfe6ec; }
+.lbl-lightbox__controls .btn--ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,0.35); box-shadow: none; }
+.lbl-lightbox__controls .btn--ghost:hover { background: rgba(255,255,255,0.1); }
+.lbl-lightbox__scroll { flex: 1; overflow: auto; touch-action: pinch-zoom pan-x pan-y; -webkit-overflow-scrolling: touch; }
+.lbl-lightbox__inner { min-width: 100%; padding: 0.5rem; box-sizing: border-box; }
+.lbl-lightbox .lbl-photo { border: none; border-radius: 6px; }
+
 .lbl-banner {
   display: flex;
   gap: 0.6rem;
