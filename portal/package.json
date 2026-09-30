@@ -10,7 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:pricing": "npx -y tsx --test src/lib/pricing/*.test.ts",
-    "test:labels": "npx -y tsx --test src/lib/labels.test.ts"
+    "test:labels": "npx -y tsx --test src/lib/labels.test.ts src/lib/order-title.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

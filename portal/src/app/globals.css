@@ -392,6 +392,18 @@ dialog.modal::backdrop { background: rgba(16, 24, 32, 0.45); }
 /* ==========================================================================
    Pizza tracker — customer order progress stepper (OrderTracker.tsx).
    ========================================================================== */
+/* Delivered orders: the stepper collapses to a one-line summary + disclosure. */
+.ogroup__done { color: #1e8e3e; font-weight: 700; }
+.ogroup__history { margin-top: 0.35rem; }
+.ogroup__history > summary {
+  cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--c-text-dim);
+  list-style: none; display: inline-flex; align-items: center; gap: 0.35rem; user-select: none;
+}
+.ogroup__history > summary::-webkit-details-marker { display: none; }
+.ogroup__history > summary::before { content: "▸"; font-size: 0.7rem; transition: transform 0.15s; }
+.ogroup__history[open] > summary::before { transform: rotate(90deg); }
+.ogroup__history[open] > summary { margin-bottom: 0.5rem; }
+
 .tracker { display: flex; margin-top: 1rem; }
 .tracker__step { flex: 1; min-width: 0; text-align: center; position: relative; padding-top: 1.15rem; }
 .tracker__step::before {
