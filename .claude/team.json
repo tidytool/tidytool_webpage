@@ -1,0 +1,81 @@
+{
+  "repo": "tidytool/tidytool_webpage",
+  "default_branch": "main",
+  "app_dir": "portal",
+  "commands": {
+    "install": "npm ci",
+    "typecheck": "npm run typecheck",
+    "tests": ["npm run test:pricing", "npm run test:labels"],
+    "build": "npm run build",
+    "dev": "npm run dev",
+    "migration_check_dev": "python3 tools/db_apply.py --check --env dev",
+    "migration_apply_dev": "python3 tools/db_apply.py {file} --env dev"
+  },
+  "todoist": {
+    "board_project_id": "6hcWX55MQRcHCfmM",
+    "board_name": "tidyPortal",
+    "umbrella_project_id": "6h578JPmqjqpcV2c",
+    "umbrella_name": "Software",
+    "sections": {
+      "backlog": "Backlog",
+      "selected": "Selected for Development",
+      "in_progress": "In Progress",
+      "in_review": "In Review"
+    },
+    "labels": {
+      "ready": "agent-ready",
+      "needs_human": "needs-sam",
+      "blocked": "blocked"
+    },
+    "sam_uid": "37615596"
+  },
+  "branch_prefix": "agent/",
+  "worktree_dir": ".claude/worktrees",
+  "contract_globs": [
+    "portal/supabase/migrations/**",
+    "portal/src/lib/pricing/**",
+    "portal/src/lib/types.ts",
+    "portal/src/lib/dxf.ts",
+    "portal/src/lib/labels.ts",
+    "planning/contracts/**",
+    "planning/*contract*.md",
+    "planning/*handoff*.md",
+    "planning/tidycam-boxes-hookup-task.md"
+  ],
+  "high_risk_globs": [
+    "portal/supabase/migrations/**",
+    "portal/src/app/auth/**",
+    "portal/src/app/login/**",
+    "portal/src/app/set-password/**",
+    "portal/src/lib/supabase/**",
+    "portal/src/lib/require-admin.ts",
+    "portal/src/lib/pricing/config.ts",
+    "docs/index.html",
+    "docs/assets/js/main.js",
+    "docs/CNAME"
+  ],
+  "hardware_signoff": {
+    "rule": "Any change whose acceptance depends on a device, a printed/cut artifact, or a real customer account stops at 'ready for device test' and carves the device step out as a needs-sam task.",
+    "examples": ["TestFlight builds", "LiDAR/iPad regression", "laser output", "prod db_apply"]
+  },
+  "limits": {
+    "max_open_agent_prs_repo": 3,
+    "max_concurrent_implementers": 2,
+    "max_review_rounds": 2,
+    "max_failed_attempts": 3,
+    "max_files_per_task": 15,
+    "budget_usd_per_task": 5,
+    "max_turns_implementer": 80
+  },
+  "models": {
+    "dispatcher": "sonnet",
+    "verifier": "sonnet",
+    "implementer": "opus",
+    "reviewer": "opus",
+    "systems_engineer_lens": "opus"
+  },
+  "pr": {
+    "evidence_file": "verification.md",
+    "trailer": "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  }
+}

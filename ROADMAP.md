@@ -154,6 +154,10 @@ Full spec: `planning/FEATURE-profiles.md`; integration architecture: `planning/A
   a per-drawer state control under Organize. Also carries `fix/labels-approved-quiet`
   (approved-without-labels drawers read "Queued for production", not "Labels needed").
 - ▶ **T3.7 estimated delivery date** — TODO (see Path Forward #3).
+- ▶ **TODO — surface `order.notes` on the portal order pages** (admin + customer). Order notes
+  carry production context that is currently invisible on the web: e.g. Weber-Ogden's
+  "Mechanical Trainer - Frontier (1 of 2)" — the second Frontier set is a duplicate of the first and
+  cuts once fit is confirmed on set 1. Added 2026-09-28.
 - ▶ **T4 lifecycle + timeline (migration 0005)** — event backbone exists; customer-facing status timeline,
   customer `drawer_event` RLS, and status-change trigger remain (Path Forward #4).
 - ▶ **Boxes Stage 4 — tidyCAM scan-time grouping** — deferred, task doc ready (Path Forward #5).
