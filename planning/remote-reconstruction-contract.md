@@ -250,8 +250,8 @@ capture is processing. With a single unattended Mac mini, that is the most likel
 -- TARGET SHAPE — not applied.
 create table public.capture_worker (
   worker_id          text primary key check (worker_id ~ '^[a-z0-9][a-z0-9_-]{1,40}$'),
-  auth_user_id       uuid not null,                 -- the worker account that last beat (null under the
-                                                    -- pilot's service_role: see the §3.5 migration-lane note)
+  auth_user_id       uuid,                          -- the worker account that last beat; null = service_role
+                                                    -- caller (pilot; NOT NULL relaxed by 20261023140000)
   version            text,
   current_capture_id uuid references public.capture(id) on delete set null,
   first_seen_at      timestamptz not null default now(),
@@ -383,10 +383,10 @@ runbook).
 - **Post-pilot target (unchanged design):** a dedicated Supabase auth user per environment with
   `user_roles.role = 'worker'`, whose reach is only the worker RPCs and the §4 storage prefixes.
   Moving to it is a separate change after Oct 30.
-- **Migration-lane note:** under `service_role`, `auth.uid()` is null. Anything the worker RPCs
-  record from `auth.uid()` (for example `capture_worker.auth_user_id`, declared `not null`) must
-  accept that; `20261023140000` has to handle it, and its verification must show a service-role
-  claim, heartbeat and complete.
+- **Migration-lane note:** under `service_role`, `auth.uid()` is null. The only worker-RPC write of
+  `auth.uid()` is `capture_worker.auth_user_id`, so `20261023140000` relaxes its NOT NULL
+  (expand-only; nothing reads the column). Its verification shows service-role claim, heartbeat
+  and complete (tests 113–122), with `auth_user_id` null (test 119).
 
 `is_worker()` is **not** folded into `is_staff()`. The worker cannot read the drawer, order or
 customer tables. It sees only what the RPCs hand it.
@@ -682,10 +682,18 @@ tracker step 2 while it is still reconstructing. The `capture_state` chip ("Proc
 - **The rule:** `complete_capture` sets `capture_state = 'ready'` and fills `photo_url` /
   `point_cloud_url` (fill-if-empty, §5.2). It never writes `drawer.stage`, `drawer.state`, the
   legacy `drawer.status`, `status_event` or `order.*`.
-- **`scanned` means customer-confirmed.** The app's dimension confirm advances the drawer, through
-  the same path the Pro on-device flow uses today. A drawer that staff pre-created at `backlog`
-  therefore stays at `backlog` after its capture completes, until the customer confirms in the
-  app or staff advance it.
+- **`scanned` is intended to mean customer-confirmed, but today there is no customer confirm path
+  to it.** The Pro on-device flow reaches `scanned` at drawer *insert* (`drawer_stage_bridge`
+  INSERT branch, `20260727100000` l.448), not at a confirm. `set_drawer_stage` is staff-only, and a
+  customer cannot update a staff-created drawer (§9.1 Q10 caveat). So:
+  - a drawer the customer inserts in-app (Q10) is at `scanned` from insert, before any capture
+    (the known gap, not changed by `20261023140000`);
+  - a drawer that staff pre-created at `backlog` stays at `backlog` after its capture completes,
+    and **only staff can advance it**. The admin queue (§9.3) should surface "capture ready, stage
+    backlog" drawers for that.
+
+  **Pending Sam:** accept the staff-only advance for pre-created drawers. It is moot if Q10's
+  in-app creation holds.
 - **As built:** `20261023120000` (#39) shipped the proposed option (b) bridge write
   (l.518-523). Follow-up migration `20261023140000_pilot_decisions.sql` (in progress on #39) is a
   body-only `create or replace` of `complete_capture` that removes it. Tests 66 and 106 flip to
@@ -1133,6 +1141,7 @@ grant execute on function public.claim_next_capture(text)                       
 grant execute on function public.worker_heartbeat(text,uuid,int,text)               to authenticated;
 grant execute on function public.complete_capture(uuid,text,int,text,text,jsonb)    to authenticated;
 grant execute on function public.fail_capture(uuid,text,int,text,text,jsonb)        to authenticated;
+-- 20261023140000 (Q1 (a)): the four worker RPCs above are also granted explicitly to service_role.
 -- requeue_capture / cancel_capture / get_my_capture_status / get_capture_queue: same posture.
 ```
 
@@ -1465,11 +1474,17 @@ There is one additive migration, written by the migration lane per `migrations/R
   `order` and `customer` (§3.5).
 - **`20261023130000_worker_heartbeat_lock_order.sql`** is a body-only `create or replace` of
   `worker_heartbeat`, with the same signature and grants (§6.1, §8).
-- **`20261023140000_pilot_decisions.sql`** (in progress on #39, Sam's 2026-10-23 decisions):
-  body-only `create or replace` of `is_worker()` (also true for `service_role`, Q1 (a)) and of
-  `complete_capture` (the option (b) bridge write removed, Q4 declined). Its verification adds
-  service-role claim, heartbeat and complete cases, and flips tests 66 and 106 to "stage unchanged
-  on complete".
+- **`20261023140000_pilot_decisions.sql`** (#39, Sam's 2026-10-23 decisions; applied to dev, md5
+  `000c2b409c2c7d701fdb95b42d90aef7`):
+  - body-only `create or replace` of `is_worker()` (also true for `service_role`, Q1 (a)) and of
+    `complete_capture` (the option (b) bridge write removed, Q4 declined);
+  - one expand-only NOT NULL relaxation, `capture_worker.auth_user_id drop not null` (§3.5 note);
+  - explicit `service_role` EXECUTE grants on `claim_next_capture`, `worker_heartbeat`,
+    `complete_capture` and `fail_capture` (additive; it already had them through default
+    privileges).
+
+  Its verification adds the service-role cases (tests 112–130) and flips test 66 and test 106 to
+  "stage unchanged on complete". 130/130 green on dev.
 
 What the migration leaves alone:
 
@@ -1511,7 +1526,9 @@ high-risk. Agents do not do it on either environment. Sam:
    storage policies, and the three `*_deny_worker` policies on `drawer`, `order` and `customer`.
    Drop the policies before the role check is restored, because they call `is_worker()`.
    If only `20261023140000` must be undone, re-apply the `is_worker()` and `complete_capture`
-   bodies from `20261023120000` instead.
+   bodies from `20261023120000` instead. To restore `capture_worker.auth_user_id set not null`,
+   first delete the rows where it is null (the service-role worker's rows), or the restore fails.
+   The explicit grants can stay.
 2. Delete the empty `scan_frames` bucket.
 3. Restore the old role check.
 
