@@ -470,6 +470,13 @@ scan_frames/
 - `manifest.json` (**Decision (proposed)**) has a minimal shape: `{ "capture_id", "drawer_id",
   "frame_count", "frames": ["frames/frame_0001.jpg", …], "device", "ios_version", "app_version",
   "has_depth": false }`.
+- **Additional keys are allowed; the worker ignores unknown keys.** `schema_version` (int) is
+  reserved. tidyCAM's capture core (T2-L3a) also writes `state`, `dropped_duplicates`,
+  `created_at`, `updated_at` and an optional `frame_details[]` (`path`, `sha256`, `bytes`,
+  `width`, `height`, `focal_length_*`), which the worker may use for integrity checks.
+- **Listing check:** the worker compares `frames[]` with the listed
+  `frames/frame_NNNN.{jpg,heic}` objects under `<drawer_id>/<capture_id>/`, excluding
+  `manifest.json` and `.json` sidecars. Names are 4-digit, 1-based and contiguous.
 - The worker treats a mismatch between the manifest and the listing as `insufficient_frames` (§7.1).
 - Objects are **immutable**: no client role has UPDATE or DELETE.
 - **The prefix is open for writing only before `create_capture`.** The insert policy (§4.2) rejects
@@ -1319,7 +1326,12 @@ It does **not** call `get_my_drawers()` and has no capture code.
     it today) or the order created on Raj's behalf. Decide before Oct 29 if the fallback is used.
 - **Sequence (new):**
   1. The drawer row exists. tidyCAM creates it as today (client-generated `drawer.id`,
-     `photo_url` null), or staff pre-created it.
+     `photo_url` null), or staff pre-created it. Local capture may come *before* the row:
+     tidyCAM pre-generates `drawer.id` in add_drawer_screen for the capture folder. **Upload
+     starts only after the drawer row is persisted**, because `_can_capture_drawer_path` needs
+     the row. Object names are relative to the local `scan_frames` root, and the contentType is
+     set explicitly. A cancelled add-drawer leaves only a local orphan folder, which T2-L3
+     cleans up.
   2. Generate `capture_id` (uuid v4).
   3. Upload the frames, then the sidecars, then `manifest.json` last.
   4. Call `create_capture(capture_id, drawer_id, frame_count, 'worker', p_timings => {capture_s, upload_s, bytes, device, app_version})`.
