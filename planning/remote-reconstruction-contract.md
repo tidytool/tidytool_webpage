@@ -369,8 +369,11 @@ runbook).
 - **How the RPCs accept it:** `is_worker()` also returns true for `service_role` callers, so
   `claim_next_capture`, `worker_heartbeat`, `complete_capture` and `fail_capture` accept the
   mini's service-role key. This is a body-only `create or replace` in follow-up migration
-  `20261023140000_pilot_decisions.sql` (in progress on #39); the worker-role branch of the
-  function is unchanged.
+  `20261023140000_pilot_decisions.sql` (#39, applied to dev); the worker-role branch of the
+  function is unchanged. Note that *any* service_role caller now passes `is_worker()`: the portal
+  admin client, edge functions and scripts. None of them calls the worker RPCs today. The worker
+  must call through PostgREST with the service-role key. A direct Postgres connection carries no
+  JWT claims, so `auth.role()` is null and the worker RPCs refuse it with 42501.
 - **Blast radius, stated plainly:** the service-role key bypasses all RLS on all tables and all
   storage policies, from an unattended box. That is the largest possible blast radius, and it is
   **accepted for the pilot only**. The mitigations:
@@ -695,7 +698,7 @@ tracker step 2 while it is still reconstructing. The `capture_state` chip ("Proc
   **Pending Sam:** accept the staff-only advance for pre-created drawers. It is moot if Q10's
   in-app creation holds.
 - **As built:** `20261023120000` (#39) shipped the proposed option (b) bridge write
-  (l.518-523). Follow-up migration `20261023140000_pilot_decisions.sql` (in progress on #39) is a
+  (l.518-523). Follow-up migration `20261023140000_pilot_decisions.sql` (#39, applied to dev) is a
   body-only `create or replace` of `complete_capture` that removes it. Tests 66 and 106 flip to
   "stage unchanged on complete".
 - **Rejected options,** for the record: (b) a legacy `status = 'created_by_user'` write picked up
@@ -1232,7 +1235,6 @@ of scope here. The transition is the hook to attach it to (§11).
 | `fail_capture` | A stale fence is a no-op. |
 | Drawer writes | Fill-if-empty, plus the `current_capture_id` pointer, means a replay or late finisher cannot double-apply or clobber anything. |
 | `requeue_capture` / `cancel_capture` | No-op if the capture is already in the target state. |
-| §5.3 stage advance (if accepted) | `set_drawer_stage`-style idempotency key `capture:<id>:scanned` in `status_event`. |
 
 **The fence is `attempt_count`.** Each claim increments it, and nothing ever decrements it. A staff
 requeue raises `attempt_limit` instead of resetting the count. A zombie worker still holding
