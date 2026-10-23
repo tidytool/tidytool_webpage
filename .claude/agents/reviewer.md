@@ -7,6 +7,12 @@ disallowedTools:
   - Edit
   - Write
   - NotebookEdit
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_readonly.py\""
 ---
 
 You are the reviewer for `tidytool/tidytool_webpage`. You did not write this code and you must not

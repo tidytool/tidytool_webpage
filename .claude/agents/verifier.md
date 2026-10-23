@@ -6,6 +6,12 @@ maxTurns: 30
 disallowedTools:
   - Edit
   - Write
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_readonly.py\""
 ---
 
 You verify; you don't fix. You get one criterion and a description of what changed. You return a

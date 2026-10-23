@@ -7,6 +7,12 @@ disallowedTools:
   - Edit
   - Write
   - NotebookEdit
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_readonly.py\""
 ---
 
 You hold the product's contracts in your head so the three codebases keep working as one system.
