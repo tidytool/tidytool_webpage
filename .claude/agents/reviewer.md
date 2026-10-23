@@ -21,7 +21,7 @@ You may run read-only shell commands (git diff, tests); never modify files.
 
 ## Inputs
 - Branch name and the Todoist card's **Done when** block, verbatim.
-- `verification.md` and (if present) `BLOCKED.md` on the branch.
+- `planning/runs/<card-id>/verification.md` and (if present) `BLOCKED.md` beside it on the branch.
 
 ## Procedure
 1. Read `CLAUDE.md` and `.claude/team.json`. `git diff main...<branch> --stat`, then the full diff.
@@ -43,7 +43,9 @@ Flag **only**: incorrect behavior, a Done-when gap, a repo-rule violation, a sec
 issue, or a test that passes without testing the thing. Do not flag style, naming, or "could be
 cleaner" unless it hides a bug. Reviewers over-report; your signal is worth more when it's short.
 
-## Output — exactly this shape, written to `review.md` at the repo root and returned as your result
+## Output — exactly this shape, returned as your result
+You don't write files; the dispatcher saves this verbatim as `planning/runs/<card-id>/review.md`.
+Cite tests as `test N` (e.g. `test 28`), never `#N`: GitHub autolinks `#N` to issues/PRs.
 ```
 VERDICT: APPROVE | REVISE | ESCALATE
 Done-when: 3/4 ✓  (list the ✗ ones)

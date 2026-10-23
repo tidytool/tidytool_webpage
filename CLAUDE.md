@@ -55,7 +55,8 @@ python3 tools/db_apply.py <file.sql> --env prod --approved   # HUMAN ONLY — ho
    Everything else (copy, styling, additive code, docs) ships through the normal PR flow.
 5. **No new dependencies** in `portal/` without sign-off; none at all in `docs/`.
 6. **PR-only.** Agents never push to `main`. Every PR carries the Done-when checklist and
-   `verification.md` evidence (see `.claude/skills/open-pr-with-evidence`).
+   `planning/runs/<card-id>/verification.md` evidence (see `.claude/skills/open-pr-with-evidence`).
+   Cite tests as `test N`, never `#N` (GitHub autolinks it to an issue/PR).
 
 ## Gotchas that have cost real time
 
@@ -77,7 +78,7 @@ python3 tools/db_apply.py <file.sql> --env prod --approved   # HUMAN ONLY — ho
 - [ ] Renders on desktop and mobile widths; no console errors
 - [ ] `docs/`: every link/anchor resolves, the quote form still submits, no hotlinked images
 - [ ] Brand tokens used (`docs/assets/css/styles.css` `:root` vars), no one-off colors
-- [ ] PR body = Done-when ✓/✗ + `verification.md` + reviewer verdict + "hardware sign-off: y/n"
+- [ ] PR body = Done-when ✓/✗ + `planning/runs/<card-id>/verification.md` + reviewer verdict + "hardware sign-off: y/n"
       + a one-line customer-visible changelog entry when the change is customer-visible
 
 ## Where things are
