@@ -567,6 +567,26 @@ The transition table is normative. No other transition is legal, and only the na
    `capture_quality`, `claimed_by` or `order.*`.** The one exception is the §5.3 proposal.
    Failure in particular does **not** put the drawer `on_hold` or `rework`. "Rescan needed" lives
    only on `capture_state`.
+4. **Customer display is derived, and a photo always wins.** **Decision (proposed), rule (b).**
+   - **The rule:** the customer-facing chip ("Processing scan" or "Rescan needed") is shown only
+     while `drawer.photo_url is null`. Once a drawer has a photo, its card is the normal drawer
+     card, whatever `capture_state` says.
+   - **Where it is computed:** server-side, once, as `display_state` in `get_my_capture_status()`
+     (§6), so the portal and tidyCAM cannot drift apart.
+   - **Why it is needed:** tidyCAM's on-device scan and rescan path writes `drawer.photo_url`
+     directly and never touches `capture_state`. That is the `uploadReplacementAssets` →
+     `from('drawer').update(...)` path in `lib/services/storage/supabase_order_service.dart`
+     ≈l.278, on tidyCAM `feature/release-1.7.1`, not yet on tidyCAM main.
+   - **What it fixes:** without this rule, a drawer at `rescan_needed` that is then rescanned on a
+     LiDAR device would show "Rescan needed" next to a valid photo. A remote capture still
+     `queued` when an on-device photo lands would show "Processing scan" the same way.
+   - **No tidyCAM dependency:** the rule needs no tidyCAM change, and it also holds for app builds
+     already in the field.
+   - **Staff view is raw:** `capture_state` itself is not rewritten; it stays the truthful status
+     of the last *capture*. Staff views show it unfiltered.
+   - **Rejected alternative (a):** tidyCAM calls `create_capture(source='device')` for every
+     on-device scan of a drawer whose `capture_state` is not null. It keeps `capture_state`
+     current, but depends on every tidyCAM build doing so. It stays open for Sam as §12 Q2.
 
 ### 5.3 Relation to the tracker (`drawer.stage`)
 
@@ -576,14 +596,35 @@ tracker step 2 while it is still reconstructing. The `capture_state` chip ("Proc
 "Rescan needed") qualifies that step; no new step is added.
 
 **Decision (proposed), needs Sam (§12 Q4):** if staff pre-created the drawer at `stage = 'backlog'`
-and a customer then scans it remotely, `complete_capture` advances it `backlog → scanned`.
+and a customer then scans it remotely, `complete_capture` advances it `backlog → scanned`. That is
+an existing sanctioned `advance` in `status_transition`. `stage` is never raw-updated (CLAUDE.md
+rule 2), and `set_drawer_stage` is staff-only, so the worker cannot call it. That leaves two
+compliant write paths, and Sam picks one.
 
-- This is an existing sanctioned `advance` in `status_transition`.
-- **Write path:** `stage` is never raw-updated (CLAUDE.md rule 2). `set_drawer_stage` is staff-only,
-  so the worker cannot call it. Instead, `complete_capture` calls one new internal SECURITY DEFINER
-  RPC, `_capture_advance_stage(p_drawer_id uuid, p_capture_id uuid)`, which is revoked from
-  `authenticated` and reachable only from `complete_capture`. It mirrors `set_drawer_stage` step for
-  step:
+**Option (b): reuse the existing legacy bridge.** No new stage writer.
+
+- `complete_capture` writes the legacy ops field, and only when the drawer is still `backlog`:
+  `update drawer set status = 'created_by_user' where id = … and stage = 'backlog'`.
+- `drawer_stage_bridge` then does the rest. It is the same path tidyCAM's legacy `status` writes
+  already take (`20260727100000_status_backbone.sql` l.471–479). The bridge:
+  - maps the value to `scanned`;
+  - accepts it only as an advance;
+  - sets `stage`;
+  - events it with `kind = 'bridge'`, `source = 'bridge'`, note `legacy drawer_status write`.
+- **Pros:** no new SECURITY DEFINER stage writer, and no body replace of `record_status_event`.
+- **Cons:**
+  - The event is attributed through `record_status_event`'s existing `actor_role` case. The
+    worker is neither admin nor staff, so the event reads `actor_role = 'customer'`, with the
+    worker's uid and email.
+  - The event carries no `capture_id` and no idempotency key. It is idempotent anyway, because
+    the bridge ignores non-advances.
+  - It writes the legacy `status` column, which ARCHITECTURE.md decision 3 calls tidyCAM's ops
+    field.
+
+**Option (a): a dedicated internal RPC.** `complete_capture` calls one new internal SECURITY
+DEFINER RPC, `_capture_advance_stage(p_drawer_id uuid, p_capture_id uuid)`. It is revoked from
+`authenticated` and reachable only from `complete_capture`, and it mirrors `set_drawer_stage` step
+for step:
   1. It locks the drawer `for update`.
   2. If the stage is not `backlog`, it returns (`p_expected_stage = 'backlog'` semantics).
   3. It requires that `status_transition` has the row (`drawer`, `backlog`, `scanned`) with kind
@@ -595,11 +636,18 @@ and a customer then scans it remotely, `complete_capture` advances it `backlog �
 
   It is a set_drawer_stage-equivalent with exactly one hard-coded transition. It is not a
   general-purpose bypass.
-- That requires a body-only `create or replace` of `record_status_event` (same signature) to add
-  `when public.is_worker() then 'worker'` to its `actor_role` case. Otherwise the event would be
-  attributed as `customer`.
-- If Sam declines, the drawer stays in `backlog` until staff advance it, and nothing else in this
-  contract changes.
+
+  Attribution needs a body-only `create or replace` of `record_status_event` (same signature)
+  adding `when public.is_worker() then 'worker'` to its `actor_role` case.
+
+  - **Pros:** correct attribution, an idempotency key and a capture link in the event.
+  - **Cons:** a second stage writer, and a body replace of a core function.
+
+**Recommendation: (b) for the pilot.** It needs the smallest new surface and reuses an
+already-reviewed path. Move to (a) if mis-attributed events matter in analytics.
+
+If Sam declines both, the drawer stays in `backlog` until staff advance it, and nothing else in
+this contract changes.
 
 ---
 
@@ -611,16 +659,16 @@ revoked from `authenticated`, except `_can_capture_drawer_path`, which storage R
 
 | RPC | Caller (checked inside) | Purpose | Idempotency |
 |---|---|---|---|
-| `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → capture` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Verifies the frames are in storage. Supersedes a queued predecessor. | Replaying the same id returns the same row. |
+| `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → table(capture_id, drawer_id, source, status, created_at)` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Verifies the frames are in storage. Device output URLs must live under the drawer's `drawer-assets` / `lidar_scans` prefixes. Supersedes a queued predecessor. Returns the **narrow** client shape, never the full row (no `error` or `timings`). | Replaying the same id returns the same row. |
 | `claim_next_capture(p_worker_id) → table(capture_id, drawer_id, order_id, attempt, frame_count, frames_prefix, queued_at)` | `is_worker()` | Runs the reaper (§7.2), then T3. Returns 0 or 1 rows. `FOR UPDATE SKIP LOCKED`. | At most one claim per call. Two workers never get the same row. |
 | `worker_heartbeat(p_worker_id, p_capture_id default null, p_attempt default null, p_version default null) → boolean` | `is_worker()` | Records liveness; bumps `capture.heartbeat_at` for a live claim. | Pure upsert. `false` means the claim is lost, so the worker must abort. |
 | `complete_capture(p_capture_id, p_worker_id, p_attempt, p_ortho_url, p_model_url default null, p_timings default null) → capture` | `is_worker()` with the live claim | T4 plus the drawer writes. | Replaying the same attempt and `ortho_url` is a no-op. A stale fence raises `40001`. |
 | `fail_capture(p_capture_id, p_worker_id, p_attempt, p_error_code, p_error default null, p_timings default null) → capture` | `is_worker()` with the live claim | T5/T6. The server decides retryability from the code (§7.1). | A stale fence is a no-op that returns the current row. |
 | `requeue_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T11. Allowed only for the drawer's current capture, with `source='worker'`. Sets `attempt_limit = attempt_count + 3`. | No-op if already `queued`. |
 | `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10. `error = 'cancelled: <reason>'`. | No-op if already `failed`. |
-| `get_my_capture_status() → table(drawer_id, capture_state, capture_id, capture_updated_at)` | any signed-in user | Customer view. Same visibility as `get_my_drawers()`. Only drawers with `capture_state is not null`. | Read-only. |
+| `get_my_capture_status() → table(drawer_id, display_state, capture_updated_at)` | any signed-in user | Customer view, with the same visibility as `get_my_drawers()`. `display_state` follows §5.2 rule 4: `null` when `photo_url is not null`, `'processing'` for `queued`/`processing`, `'rescan_needed'` for `rescan_needed`, otherwise `null`. Only rows with a non-null `display_state` are returned. No error text, no timings. | Read-only. |
 | `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. | Read-only. |
-| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)`; `_capture_advance_stage(uuid, uuid)` only if §5.3 is accepted | internal | Helpers. | `_capture_advance_stage`: `status_event` idempotency key |
+| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)`; `_capture_advance_stage(uuid, uuid)` only if §5.3 option (a) is chosen | internal | Helpers. | `_capture_advance_stage`: `status_event` idempotency key |
 
 Why `get_my_capture_status()` is a new RPC: adding a column to `get_my_drawers()` would change its
 return type, which needs a drop and recreate. That breaks in place, and it is the same "cannot
@@ -669,24 +717,29 @@ create or replace function public.create_capture(
   p_ortho_url   text  default null,     -- source = 'device' only
   p_model_url   text  default null,     -- source = 'device' only
   p_timings     jsonb default null      -- stored under timings.client
-) returns public.capture
+) returns table (capture_id uuid, drawer_id uuid, source text, status text, created_at timestamptz)
+  -- Narrow client shape (§3.1): never error / timings / worker columns.
 language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
 declare
-  v      public.capture;
-  v_prev uuid;
-  v_n    int;
+  v       public.capture;
+  v_prev  uuid;
+  v_check uuid;
+  v_tries int := 0;
+  v_n     int;
 begin
   if auth.uid() is null then
     raise exception 'sign-in required' using errcode = '42501';
   end if;
 
   -- Idempotent replay (tidyCAM retries after a timeout): same id => same row back.
-  select * into v from public.capture where id = p_capture_id;
+  select * into v from public.capture c where c.id = p_capture_id;
   if found then
     if v.drawer_id <> p_drawer_id or v.created_by <> auth.uid() then
       raise exception 'capture id already in use' using errcode = '23505';
     end if;
-    return v;
+    return query select v.id, v.drawer_id, v.source, v.status, v.created_at;
+    return;
   end if;
 
   -- One error for "no such drawer" and "not yours" (anti-enumeration, like get_order_tracker).
@@ -711,12 +764,34 @@ begin
     if v_n < p_frame_count then
       raise exception 'frames not uploaded: % of %', v_n, p_frame_count using errcode = 'P0001';
     end if;
-  elsif p_ortho_url is null then
-    raise exception 'device captures need ortho_url';
+  else
+    -- Device outputs: same prefix checks as complete_capture (§4.3) — a caller cannot point a
+    -- capture at another drawer's assets or an arbitrary URL.
+    if p_ortho_url is null
+       or strpos(p_ortho_url, '/drawer-assets/' || p_drawer_id::text || '/') = 0 then
+      raise exception 'ortho_url must be a drawer-assets/<drawer_id>/ object';
+    end if;
+    if p_model_url is not null
+       and strpos(p_model_url, '/lidar_scans/' || p_drawer_id::text || '/') = 0 then
+      raise exception 'model_url must be a lidar_scans/<drawer_id>/ object';
+    end if;
   end if;
 
-  -- Serialise concurrent create_capture calls on the same drawer.
-  select current_capture_id into v_prev from public.drawer where id = p_drawer_id for update;
+  -- Lock order (§8): capture rows FIRST, then the drawer — the same order every other capture
+  -- RPC uses (claim / complete / fail / reaper / requeue / cancel lock the capture, then touch the
+  -- drawer). Read the pointer unlocked, lock the predecessor capture, lock the drawer, re-check.
+  loop
+    select d.current_capture_id into v_prev from public.drawer d where d.id = p_drawer_id;
+    if v_prev is not null then
+      perform 1 from public.capture c where c.id = v_prev for update;
+    end if;
+    select d.current_capture_id into v_check from public.drawer d where d.id = p_drawer_id for update;
+    exit when v_check is not distinct from v_prev;
+    v_tries := v_tries + 1;                        -- pointer moved underneath us: retry
+    if v_tries >= 3 then
+      raise exception 'drawer % busy, retry', p_drawer_id using errcode = '40001';
+    end if;
+  end loop;
 
   insert into public.capture (id, drawer_id, created_by, source, frame_count, status,
                               ortho_url, model_url, finished_at, timings)
@@ -731,20 +806,20 @@ begin
   -- A still-queued predecessor is superseded (saves worker time). A processing one may finish,
   -- but it no longer owns the drawer (§5.2 rule 1).
   if v_prev is not null then
-    update public.capture
+    update public.capture c
        set status = 'failed', error = 'superseded: by capture ' || p_capture_id::text,
            finished_at = now(), updated_at = now()
-     where id = v_prev and status = 'queued';
+     where c.id = v_prev and c.status = 'queued';
   end if;
 
   perform set_config('tidytool.capture_write', 'on', true);
-  update public.drawer
+  update public.drawer d
      set current_capture_id = v.id,
          capture_state      = case v.status when 'done' then 'ready' else 'queued' end
-   where id = p_drawer_id;
+   where d.id = p_drawer_id;
   perform set_config('tidytool.capture_write', 'off', true);
 
-  return v;
+  return query select v.id, v.drawer_id, v.source, v.status, v.created_at;
 end $$;
 
 create or replace function public.claim_next_capture(p_worker_id text)
@@ -880,7 +955,10 @@ begin
    where d.id = v.drawer_id and d.current_capture_id = v.id;
   perform set_config('tidytool.capture_write', 'off', true);
 
-  -- §5.3 (proposed, pending Sam): only if this is the current capture —
+  -- §5.3 (proposed, pending Sam; current capture only). Option (b), recommended:
+  --   update public.drawer set status = 'created_by_user'
+  --    where id = v.drawer_id and stage = 'backlog';            -- drawer_stage_bridge advances + events it
+  -- Option (a):
   --   perform public._capture_advance_stage(v.drawer_id, v.id);   -- backlog → scanned, evented, idempotent
 
   update public.capture_worker w
@@ -1095,6 +1173,21 @@ of scope here. The transition is the hook to attach it to (§11).
 requeue raises `attempt_limit` instead of resetting the count. A zombie worker still holding
 attempt *n* therefore cannot complete a capture that has since been reclaimed as attempt *n+1*,
 even if both claims carry the same `worker_id`.
+
+**Lock order: capture rows before the drawer row, always.**
+
+- These RPCs lock the `capture` row first and then write the drawer, in `_sync_drawer_capture_state`
+  or the output fill: `claim_next_capture`, `complete_capture`, `fail_capture`,
+  `_reap_stale_captures`, `requeue_capture` and `cancel_capture`.
+- `create_capture` follows the same order. It reads `current_capture_id` unlocked, locks that
+  predecessor capture, then locks the drawer, and re-checks the pointer. It retries up to 3 times,
+  then raises `40001` (§6.1).
+- The worker's heartbeat touches only `capture`.
+- tidyCAM's and tidyCAD's own drawer updates lock only the drawer.
+
+With one global order, a `40P01` deadlock should not occur between capture RPCs. As a belt and
+braces rule, every client treats `40001` and `40P01` from any capture RPC as **retryable**. A
+retry with the same arguments is safe by the rows above.
 
 ---
 
