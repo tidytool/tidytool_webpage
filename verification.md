@@ -56,8 +56,20 @@ files were byte-verified; now 25 are, and the two new ones are these migrations.
   capture that no longer exists raised 23503: the FK on `capture_worker.current_capture_id`.
 - **The fix (20261023130000).** The function now updates `capture` first and records whether that
   claim is live. It then upserts `capture_worker`, with
-  `current_capture_id = case when live then p_capture_id end`. Every capture RPC now takes locks in
-  the order capture → capture_worker → drawer.
+  `current_capture_id = case when live then p_capture_id end`.
+- **Correction (review round 2).** The 20261023130000 header and an earlier draft of this file said
+  "capture → capture_worker → drawer in every capture RPC". That is not what the code does. The real
+  order per RPC is:
+  - `worker_heartbeat`: capture → capture_worker.
+  - `complete_capture` / `fail_capture`: capture → drawer → capture_worker.
+  - `claim_next_capture`: capture_worker → capture (SKIP LOCKED only, so it never waits) → drawer.
+
+  The invariant that holds is that every capture lock that can wait is taken before drawer and
+  capture_worker. That removes the heartbeat deadlock. One theoretical cycle remains, from
+  20261023120000: claim takes capture_worker then drawer, while complete/fail take drawer then
+  capture_worker. It needs claim and complete to run at once on a shared drawer, which the worker's
+  serial loop doesn't do, and §8 treats 40P01 as retryable. The header is applied and byte-exact, so
+  it stays as is.
 - **Proof on dev.** `pg_get_functiondef(worker_heartbeat)` puts `update public.capture` at offset 540,
   before `insert into public.capture_worker` at offset 859. Test #110 asserts this ordering.
 - **The new tests are real regressions.** Before 20261023130000 was applied, tests #57 and #103
