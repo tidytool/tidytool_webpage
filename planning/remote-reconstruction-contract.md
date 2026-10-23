@@ -457,3 +457,580 @@ scan.
 - **Any cache must key on the object path** (`bucket + name`), **never on the full URL.** The
   `?token=` changes every time a URL is signed (CLAUDE.md gotcha). tidyCAD's photo cache already
   does this; anything new must too.
+
+---
+
+## 5. State machine
+
+### 5.1 `capture.status`
+
+```
+ create_capture(source=worker)                                     create_capture(source=device)
+            │                                                                   │
+            ▼                 claim_next_capture                                ▼
+       ┌─────────┐  ─────────────────────────────────▶  ┌────────────┐  complete_capture  ┌──────┐
+       │ queued  │                                      │ processing │ ─────────────────▶ │ done │  (terminal)
+       └─────────┘  ◀─────────────────────────────────  └────────────┘                    └──────┘
+          │   ▲        retry: fail_capture(retryable) /        │
+          │   │        reaper (attempts left) /                │ fail_capture(final) / reaper(exhausted) /
+          │   │        requeue_capture (staff)                 │ cancel_capture (staff)
+          │   │                                                ▼
+          │   │  requeue_capture (staff)              ┌──────────────┐
+          │   └────────────────────────────────────── │    failed    │  (terminal unless staff requeue)
+          └──────────────────────────────────────────▶└──────────────┘
+             superseded by a newer create_capture / cancel_capture (staff)
+```
+
+The transition table is normative. No other transition is legal, and only the named RPCs perform these transitions.
+
+| # | From → To | Performed by | Caller | `drawer.capture_state` (current capture only) |
+|---|---|---|---|---|
+| T1 | — → `queued` | `create_capture(source='worker')` | tidyCAM user / staff | `queued` |
+| T2 | — → `done` | `create_capture(source='device')` | tidyCAM user / staff | `ready` |
+| T3 | `queued` → `processing` | `claim_next_capture` | worker | `processing` |
+| T4 | `processing` → `done` | `complete_capture` (live claim only) | worker | `ready`; `photo_url` and `point_cloud_url` are filled only if empty (§5.2) |
+| T5 | `processing` → `queued` | `fail_capture` with a retryable code and attempts left | worker | `queued` |
+| T6 | `processing` → `failed` | `fail_capture` with a non-retryable code, or with no attempts left | worker | `rescan_needed` |
+| T7 | `processing` → `queued` | Reaper (§7.2) with attempts left | system, inside a worker's claim | `queued` |
+| T8 | `processing` → `failed` | Reaper with no attempts left (`retries_exhausted`) | system | `rescan_needed` |
+| T9 | `queued` → `failed` | `create_capture` for the same drawer (`superseded`) | tidyCAM user / staff | Unchanged (the old capture is no longer current) |
+| T10 | `queued`/`processing` → `failed` | `cancel_capture` | staff | `rescan_needed` |
+| T11 | `failed`/`processing` → `queued` | `requeue_capture` (current capture only; raises `attempt_limit`) | staff | `queued` |
+
+`done` is terminal. A different result always means a **new capture** (a rescan).
+
+### 5.2 Drawer-side rules
+
+1. **Only the current capture writes to the drawer.** A capture whose id is not
+   `drawer.current_capture_id` may still reach `done` or `failed`, but it leaves `capture_state`,
+   `photo_url` and `point_cloud_url` alone.
+2. **Fill if empty, never overwrite.** `complete_capture` sets `photo_url` and `point_cloud_url`
+   only when they are null. **Decision (proposed).** Three reasons:
+   - **Corners are tied to the image they were picked on.** `dimensions.correction.corner_points`
+     are ortho-photo **pixels**, and `reference_corners` / `boundary_corners` are **normalized**
+     against the image they were tapped on. Swapping the image under them would silently corrupt
+     both (CLAUDE.md gotcha).
+   - **tidyCAD's model cache is keyed on drawer_id.** A replaced `point_cloud_url` would never be
+     re-downloaded.
+   - **The scan-correction contract says raw assets are never modified.**
+
+   Consequence: a rescan of a drawer that already has a photo produces its result on the `capture`
+   row, and the drawer still reads `ready`. Adopting that newer result is a staff decision; see §12 Q6.
+3. **Capture transitions never touch `stage`, `state`, `status_event`, `drawer_event`,
+   `capture_quality`, `claimed_by` or `order.*`.** The one exception is the §5.3 proposal.
+   Failure in particular does **not** put the drawer `on_hold` or `rework`. "Rescan needed" lives
+   only on `capture_state`.
+
+### 5.3 Relation to the tracker (`drawer.stage`)
+
+A drawer row that tidyCAM inserts gets `stage = 'scanned'` from `drawer_stage_bridge`, as it does
+today (`20260727100000_status_backbone.sql` §8). So a remotely scanned drawer already sits at
+tracker step 2 while it is still reconstructing. The `capture_state` chip ("Processing scan" or
+"Rescan needed") qualifies that step; no new step is added.
+
+**Decision (proposed), needs Sam (§12 Q4):** if staff pre-created the drawer at `stage = 'backlog'`
+and a customer then scans it remotely, `complete_capture` advances it `backlog → scanned`.
+
+- This is an existing sanctioned `advance` in `status_transition`.
+- It is evented through `record_status_event('drawer','stage','advance', …, source => 'system',
+  idempotency_key => 'capture:<capture_id>:scanned')`.
+- That requires a body-only `create or replace` of `record_status_event` (same signature) to add
+  `when public.is_worker() then 'worker'` to its `actor_role` case. Otherwise the event would be
+  attributed as `customer`.
+- If Sam declines, the drawer stays in `backlog` until staff advance it, and nothing else in this
+  contract changes.
+
+---
+
+## 6. RPC surface
+
+Every RPC is `security definer`, `set search_path = public`, `revoke … from public, anon`. Each is
+granted to `authenticated` and does its own role check inside. Internal helpers (`_…`) are also
+revoked from `authenticated`, except `_can_capture_drawer_path`, which storage RLS needs.
+
+| RPC | Caller (checked inside) | Purpose | Idempotency |
+|---|---|---|---|
+| `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → capture` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Verifies the frames are in storage. Supersedes a queued predecessor. | Replaying the same id returns the same row. |
+| `claim_next_capture(p_worker_id) → table(capture_id, drawer_id, order_id, attempt, frame_count, frames_prefix, queued_at)` | `is_worker()` | Runs the reaper (§7.2), then T3. Returns 0 or 1 rows. `FOR UPDATE SKIP LOCKED`. | At most one claim per call. Two workers never get the same row. |
+| `worker_heartbeat(p_worker_id, p_capture_id default null, p_attempt default null, p_version default null) → boolean` | `is_worker()` | Records liveness; bumps `capture.heartbeat_at` for a live claim. | Pure upsert. `false` means the claim is lost, so the worker must abort. |
+| `complete_capture(p_capture_id, p_worker_id, p_attempt, p_ortho_url, p_model_url default null, p_timings default null) → capture` | `is_worker()` with the live claim | T4 plus the drawer writes. | Replaying the same attempt and `ortho_url` is a no-op. A stale fence raises `40001`. |
+| `fail_capture(p_capture_id, p_worker_id, p_attempt, p_error_code, p_error default null, p_timings default null) → capture` | `is_worker()` with the live claim | T5/T6. The server decides retryability from the code (§7.1). | A stale fence is a no-op that returns the current row. |
+| `requeue_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T11. Allowed only for the drawer's current capture, with `source='worker'`. Sets `attempt_limit = attempt_count + 3`. | No-op if already `queued`. |
+| `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10. `error = 'cancelled: <reason>'`. | No-op if already `failed`. |
+| `get_my_capture_status() → table(drawer_id, capture_state, capture_id, capture_updated_at)` | any signed-in user | Customer view. Same visibility as `get_my_drawers()`. Only drawers with `capture_state is not null`. | Read-only. |
+| `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. | Read-only. |
+| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)` | internal | Helpers. | — |
+
+Why `get_my_capture_status()` is a new RPC: adding a column to `get_my_drawers()` would change its
+return type, which needs a drop and recreate. That breaks in place, and it is the same "cannot
+change return type" trap as `20260706000000`. A sibling RPC is expand-only. It mirrors
+`get_my_label_status()` (`20260803120000_customer_tool_labels.sql`).
+
+### 6.1 Target-shape SQL (not applied)
+
+```sql
+-- Who may start a capture for a drawer: staff, the drawer's creator, or a customer who can see it.
+-- Cancelled drawers cannot be captured.
+create or replace function public._can_capture_drawer(p_drawer_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.drawer d
+     where d.id = p_drawer_id
+       and d.state <> 'cancelled'
+       and (public.is_staff()
+            or d.created_by = auth.uid()
+            or public._customer_can_see_drawer(d.id))
+       -- AND public.is_approved()  ← add when the approval gate (TIDYCAM-launch-coordination §1) ships
+  );
+$$;
+
+-- Mirror the current capture's status onto the drawer (no-op for a superseded capture).
+create or replace function public._sync_drawer_capture_state(p_capture_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.capture;
+begin
+  select * into v from public.capture where id = p_capture_id;
+  perform set_config('tidytool.capture_write', 'on', true);
+  update public.drawer d
+     set capture_state = case v.status when 'queued'     then 'queued'
+                                       when 'processing' then 'processing'
+                                       when 'done'       then 'ready'
+                                       when 'failed'     then 'rescan_needed' end
+   where d.id = v.drawer_id and d.current_capture_id = v.id;
+  perform set_config('tidytool.capture_write', 'off', true);
+end $$;
+
+create or replace function public.create_capture(
+  p_capture_id  uuid,
+  p_drawer_id   uuid,
+  p_frame_count int,
+  p_source      text  default 'worker',
+  p_ortho_url   text  default null,     -- source = 'device' only
+  p_model_url   text  default null,     -- source = 'device' only
+  p_timings     jsonb default null      -- stored under timings.client
+) returns public.capture
+language plpgsql security definer set search_path = public as $$
+declare
+  v      public.capture;
+  v_prev uuid;
+  v_n    int;
+begin
+  if auth.uid() is null then
+    raise exception 'sign-in required' using errcode = '42501';
+  end if;
+
+  -- Idempotent replay (tidyCAM retries after a timeout): same id => same row back.
+  select * into v from public.capture where id = p_capture_id;
+  if found then
+    if v.drawer_id <> p_drawer_id or v.created_by <> auth.uid() then
+      raise exception 'capture id already in use' using errcode = '23505';
+    end if;
+    return v;
+  end if;
+
+  -- One error for "no such drawer" and "not yours" (anti-enumeration, like get_order_tracker).
+  if not public._can_capture_drawer(p_drawer_id) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_source not in ('device','worker') then
+    raise exception 'invalid source: %', p_source;
+  end if;
+
+  if p_source = 'worker' then
+    if p_frame_count is null or p_frame_count not between 20 and 400 then
+      raise exception 'frame_count must be 20..400 (got %)', p_frame_count;
+    end if;
+    -- The frames must already be in storage, uploaded by this caller (§4.1).
+    select count(*) into v_n
+      from storage.objects o
+     where o.bucket_id = 'scan_frames'
+       and o.owner = auth.uid()
+       and o.name ~ ('^' || p_drawer_id::text || '/' || p_capture_id::text
+                     || '/frames/frame_[0-9]{4}\.(jpg|heic)$');
+    if v_n < p_frame_count then
+      raise exception 'frames not uploaded: % of %', v_n, p_frame_count using errcode = 'P0001';
+    end if;
+  elsif p_ortho_url is null then
+    raise exception 'device captures need ortho_url';
+  end if;
+
+  -- Serialise concurrent create_capture calls on the same drawer.
+  select current_capture_id into v_prev from public.drawer where id = p_drawer_id for update;
+
+  insert into public.capture (id, drawer_id, created_by, source, frame_count, status,
+                              ortho_url, model_url, finished_at, timings)
+  values (p_capture_id, p_drawer_id, auth.uid(), p_source, coalesce(p_frame_count, 0),
+          case p_source when 'device' then 'done' else 'queued' end,
+          case p_source when 'device' then p_ortho_url end,
+          case p_source when 'device' then p_model_url end,
+          case p_source when 'device' then now() end,
+          jsonb_build_object('client', coalesce(p_timings, '{}'::jsonb)))
+  returning * into v;
+
+  -- A still-queued predecessor is superseded (saves worker time). A processing one may finish,
+  -- but it no longer owns the drawer (§5.2 rule 1).
+  if v_prev is not null then
+    update public.capture
+       set status = 'failed', error = 'superseded: by capture ' || p_capture_id::text,
+           finished_at = now(), updated_at = now()
+     where id = v_prev and status = 'queued';
+  end if;
+
+  perform set_config('tidytool.capture_write', 'on', true);
+  update public.drawer
+     set current_capture_id = v.id,
+         capture_state      = case v.status when 'done' then 'ready' else 'queued' end
+   where id = p_drawer_id;
+  perform set_config('tidytool.capture_write', 'off', true);
+
+  return v;
+end $$;
+
+create or replace function public.claim_next_capture(p_worker_id text)
+returns table (capture_id uuid, drawer_id uuid, order_id uuid, attempt int,
+               frame_count int, frames_prefix text, queued_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare v public.capture;
+begin
+  if not public.is_worker() then
+    raise exception 'worker role required' using errcode = '42501';
+  end if;
+
+  insert into public.capture_worker (worker_id, auth_user_id, last_seen_at)
+  values (p_worker_id, auth.uid(), now())
+  on conflict (worker_id) do update
+     set auth_user_id = excluded.auth_user_id, last_seen_at = now();
+
+  perform public._reap_stale_captures(p_worker_id);          -- §7.2
+
+  select * into v
+    from public.capture c
+   where c.status = 'queued' and c.source = 'worker'
+   order by c.created_at                                     -- FIFO
+   limit 1
+   for update skip locked;
+  if not found then
+    return;                                                  -- empty queue: worker sleeps and polls again
+  end if;
+
+  update public.capture c
+     set status = 'processing', worker_id = p_worker_id,
+         claimed_at = now(), heartbeat_at = now(),
+         attempt_count = c.attempt_count + 1, updated_at = now()
+   where c.id = v.id
+  returning * into v;
+
+  update public.capture_worker w set current_capture_id = v.id where w.worker_id = p_worker_id;
+  perform public._sync_drawer_capture_state(v.id);
+
+  return query
+    select v.id, v.drawer_id, d.order_id, v.attempt_count, v.frame_count,
+           v.drawer_id::text || '/' || v.id::text || '/', v.created_at
+      from public.drawer d
+     where d.id = v.drawer_id;
+end $$;
+
+create or replace function public.worker_heartbeat(
+  p_worker_id  text,
+  p_capture_id uuid default null,
+  p_attempt    int  default null,
+  p_version    text default null
+) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_worker() then
+    raise exception 'worker role required' using errcode = '42501';
+  end if;
+
+  insert into public.capture_worker (worker_id, auth_user_id, version, current_capture_id, last_seen_at)
+  values (p_worker_id, auth.uid(), p_version, p_capture_id, now())
+  on conflict (worker_id) do update
+     set auth_user_id       = excluded.auth_user_id,
+         version            = coalesce(excluded.version, public.capture_worker.version),
+         current_capture_id = excluded.current_capture_id,
+         last_seen_at       = now();
+
+  if p_capture_id is null then
+    return true;                                             -- idle beat
+  end if;
+
+  update public.capture
+     set heartbeat_at = now(), updated_at = now()
+   where id = p_capture_id and status = 'processing'
+     and worker_id = p_worker_id and attempt_count = p_attempt;
+  return found;                                              -- false => claim lost: abort, discard outputs
+end $$;
+
+create or replace function public.complete_capture(
+  p_capture_id uuid, p_worker_id text, p_attempt int,
+  p_ortho_url  text, p_model_url text default null, p_timings jsonb default null
+) returns public.capture
+language plpgsql security definer set search_path = public as $$
+declare v public.capture;
+begin
+  if not public.is_worker() then
+    raise exception 'worker role required' using errcode = '42501';
+  end if;
+
+  select * into v from public.capture where id = p_capture_id for update;
+  if not found then
+    raise exception 'capture not found' using errcode = 'P0002';
+  end if;
+
+  -- Idempotent replay: this attempt already completed with this output.
+  if v.status = 'done' and v.attempt_count = p_attempt and v.ortho_url = p_ortho_url then
+    return v;
+  end if;
+  -- Fence (§8): only the live claim may complete.
+  if v.status <> 'processing' or v.worker_id is distinct from p_worker_id
+     or v.attempt_count <> p_attempt then
+    raise exception 'lost claim on capture % (attempt %)', p_capture_id, p_attempt
+      using errcode = '40001';
+  end if;
+  -- Outputs must live under this drawer in the on-device buckets (§4.3).
+  if p_ortho_url is null
+     or strpos(p_ortho_url, '/drawer-assets/' || v.drawer_id::text || '/') = 0 then
+    raise exception 'ortho_url must be a drawer-assets/<drawer_id>/ object';
+  end if;
+  if p_model_url is not null
+     and strpos(p_model_url, '/lidar_scans/' || v.drawer_id::text || '/') = 0 then
+    raise exception 'model_url must be a lidar_scans/<drawer_id>/ object';
+  end if;
+
+  update public.capture c
+     set status = 'done', ortho_url = p_ortho_url, model_url = p_model_url, error = null,
+         finished_at = now(), heartbeat_at = now(), updated_at = now(),
+         timings = jsonb_set(
+           c.timings || jsonb_build_object('worker', coalesce(p_timings, '{}'::jsonb)),
+           '{attempts}',
+           coalesce(c.timings -> 'attempts', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+             'attempt', c.attempt_count, 'worker_id', c.worker_id,
+             'claimed_at', c.claimed_at, 'ended_at', now(), 'outcome', 'done')))
+   where c.id = v.id
+  returning * into v;
+
+  -- Drawer: current capture only, fill-if-empty only (§5.2).
+  perform set_config('tidytool.capture_write', 'on', true);
+  update public.drawer d
+     set photo_url       = coalesce(d.photo_url, v.ortho_url),
+         point_cloud_url = coalesce(d.point_cloud_url, v.model_url),
+         capture_state   = 'ready'
+   where d.id = v.drawer_id and d.current_capture_id = v.id;
+  perform set_config('tidytool.capture_write', 'off', true);
+
+  -- §5.3 (proposed, pending Sam): if drawer.stage = 'backlog', advance to 'scanned' and event it
+  -- with idempotency key 'capture:' || v.id || ':scanned'.
+
+  update public.capture_worker w
+     set current_capture_id = null, last_seen_at = now()
+   where w.worker_id = p_worker_id;
+  return v;
+end $$;
+
+create or replace function public.fail_capture(
+  p_capture_id uuid, p_worker_id text, p_attempt int,
+  p_error_code text, p_error text default null, p_timings jsonb default null
+) returns public.capture
+language plpgsql security definer set search_path = public as $$
+declare
+  v         public.capture;
+  v_retry   boolean;
+  v_final   boolean;
+begin
+  if not public.is_worker() then
+    raise exception 'worker role required' using errcode = '42501';
+  end if;
+  -- Worker-reportable codes and their retryability (§7.1). The server decides, not the caller.
+  v_retry := case p_error_code
+               when 'insufficient_frames'   then false
+               when 'bad_frames'            then false
+               when 'reconstruction_failed' then false
+               when 'ortho_failed'          then false
+               when 'download_failed'       then true
+               when 'upload_failed'         then true
+               when 'worker_error'          then true
+             end;
+  if v_retry is null then
+    raise exception 'unknown error_code: %', p_error_code;
+  end if;
+
+  select * into v from public.capture where id = p_capture_id for update;
+  if not found then
+    raise exception 'capture not found' using errcode = 'P0002';
+  end if;
+  -- Stale fence => no-op: the attempt is over either way (reaped, requeued, cancelled).
+  if v.status <> 'processing' or v.worker_id is distinct from p_worker_id
+     or v.attempt_count <> p_attempt then
+    return v;
+  end if;
+
+  v_final := not v_retry or v.attempt_count >= v.attempt_limit;
+
+  update public.capture c
+     set status      = case when v_final then 'failed' else 'queued' end,
+         error       = case when v_final and v_retry then 'retries_exhausted: ' else '' end
+                       || p_error_code || ': ' || left(coalesce(p_error, ''), 2000),
+         finished_at = case when v_final then now() end,
+         worker_id = null, claimed_at = null, heartbeat_at = null, updated_at = now(),
+         timings = jsonb_set(
+           c.timings || jsonb_build_object('worker', coalesce(p_timings, '{}'::jsonb)),
+           '{attempts}',
+           coalesce(c.timings -> 'attempts', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+             'attempt', c.attempt_count, 'worker_id', c.worker_id, 'claimed_at', c.claimed_at,
+             'ended_at', now(), 'outcome', case when v_final then 'failed' else 'retry' end,
+             'error_code', p_error_code)))
+   where c.id = v.id
+  returning * into v;
+
+  perform public._sync_drawer_capture_state(v.id);
+  update public.capture_worker w
+     set current_capture_id = null, last_seen_at = now()
+   where w.worker_id = p_worker_id;
+  return v;
+end $$;
+
+-- Stale-claim recovery (§7.2). Runs at the top of every claim_next_capture; no cron needed.
+create or replace function public._reap_stale_captures(p_worker_id text)
+returns int language plpgsql security definer set search_path = public as $$
+declare r record; n int := 0; v_exhausted boolean; v_code text;
+begin
+  for r in
+    select c.* from public.capture c
+     where c.status = 'processing'
+       and (c.worker_id = p_worker_id                          -- this worker restarted mid-capture
+            or c.heartbeat_at < now() - interval '3 minutes'   -- ~6 missed beats
+            or c.claimed_at   < now() - interval '45 minutes') -- hard wall-clock cap
+     for update skip locked
+  loop
+    v_exhausted := r.attempt_count >= r.attempt_limit;
+    v_code := case when r.claimed_at < now() - interval '45 minutes' then 'timeout' else 'worker_lost' end;
+    update public.capture c
+       set status      = case when v_exhausted then 'failed' else 'queued' end,
+           error       = case when v_exhausted
+                              then 'retries_exhausted: ' || v_code || ': attempt ' || r.attempt_count
+                                   || ' on ' || r.worker_id
+                              else c.error end,
+           finished_at = case when v_exhausted then now() end,
+           worker_id = null, claimed_at = null, heartbeat_at = null, updated_at = now(),
+           timings = jsonb_set(c.timings, '{attempts}',
+             coalesce(c.timings -> 'attempts', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+               'attempt', r.attempt_count, 'worker_id', r.worker_id, 'claimed_at', r.claimed_at,
+               'ended_at', now(), 'outcome', 'lost', 'error_code', v_code)))
+     where c.id = r.id;
+    perform public._sync_drawer_capture_state(r.id);
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+-- Grants (house posture).
+revoke all on function public._can_capture_drawer(uuid)             from public, anon, authenticated;
+revoke all on function public._sync_drawer_capture_state(uuid)      from public, anon, authenticated;
+revoke all on function public._reap_stale_captures(text)            from public, anon, authenticated;
+revoke all on function public.create_capture(uuid,uuid,int,text,text,text,jsonb)   from public, anon;
+revoke all on function public.claim_next_capture(text)                             from public, anon;
+revoke all on function public.worker_heartbeat(text,uuid,int,text)                 from public, anon;
+revoke all on function public.complete_capture(uuid,text,int,text,text,jsonb)      from public, anon;
+revoke all on function public.fail_capture(uuid,text,int,text,text,jsonb)          from public, anon;
+grant execute on function public.create_capture(uuid,uuid,int,text,text,text,jsonb) to authenticated;
+grant execute on function public.claim_next_capture(text)                           to authenticated;
+grant execute on function public.worker_heartbeat(text,uuid,int,text)               to authenticated;
+grant execute on function public.complete_capture(uuid,text,int,text,text,jsonb)    to authenticated;
+grant execute on function public.fail_capture(uuid,text,int,text,text,jsonb)        to authenticated;
+-- requeue_capture / cancel_capture / get_my_capture_status / get_capture_queue: same posture.
+```
+
+`requeue_capture`, `cancel_capture`, `get_my_capture_status` and `get_capture_queue` are fully
+specified by the table above and §7. Their bodies follow the existing patterns:
+
+- the `is_staff()` guard from `set_drawer_state`;
+- the customer join from `get_my_label_status()`;
+- the `jsonb` rollup from `get_status_pipeline()`.
+
+The migration lane writes them in those patterns.
+
+---
+
+## 7. Failure semantics
+
+### 7.1 Error codes
+
+The format is `capture.error = '<code>: <detail>'`. Customers never see the code or the detail.
+Every `failed` capture, whatever the code, shows the customer **"Rescan needed"** (§12 Q3).
+
+| Code | Assigned by | Retryable | Meaning |
+|---|---|---|---|
+| `insufficient_frames` | worker | no | Fewer usable frames than the manifest or minimum; manifest/listing mismatch. |
+| `bad_frames` | worker | no | Frames unreadable, or failing the worker's quality gate (blur, exposure). |
+| `reconstruction_failed` | worker | no | Photogrammetry produced no usable model (e.g., not enough overlap). |
+| `ortho_failed` | worker | no | Model built, but no drawer plane or ortho could be derived. |
+| `download_failed` | worker | yes | Could not fetch frames from `scan_frames`. |
+| `upload_failed` | worker | yes | Could not upload outputs to `drawer-assets` or `lidar_scans`. |
+| `worker_error` | worker | yes | Unexpected crash or exception, including OOM. |
+| `worker_lost` | server (reaper) | yes | Heartbeat older than 3 min, or the same worker re-claimed after a restart. |
+| `timeout` | server (reaper) | yes | Claimed more than 45 min ago, regardless of heartbeats. |
+| `retries_exhausted` | server | final | Prefix added when a retryable failure hits `attempt_limit`. |
+| `superseded` | server (`create_capture`) | final | A newer capture for the same drawer arrived while this one was still `queued`. |
+| `cancelled` | staff (`cancel_capture`) | final | Staff stopped it, with a reason. |
+
+**Decision (proposed):** the server, not the caller, decides retryability. Input problems are
+final at once, because retrying the same frames cannot help. Infrastructure problems retry.
+
+### 7.2 Stale claims, retry cap and timings
+
+| Parameter | Value (**Decision (proposed)**) |
+|---|---|
+| Worker poll interval when the queue is empty | 10 s (`claim_next_capture`) |
+| Heartbeat while processing | every 30 s (`worker_heartbeat` with `p_capture_id`, `p_attempt`) |
+| Heartbeat while idle | every 60 s (`worker_heartbeat` without a capture) |
+| Stale claim | `heartbeat_at` older than **3 min** |
+| Hard wall-clock cap | `claimed_at` older than **45 min** |
+| Retry cap | `attempt_limit = 3` claims per capture (staff requeue adds 3) |
+| Worker shown offline in admin | `capture_worker.last_seen_at` older than 3 min |
+
+**Recovery runs lazily inside `claim_next_capture`** (`_reap_stale_captures`). There is no pg_cron
+dependency.
+
+- **What it reaps:** a stale or over-cap `processing` row goes back to `queued` if attempts remain.
+  Otherwise it becomes `failed` (`retries_exhausted`).
+- **Worker restarts:** a worker that restarts and claims again also reaps anything still held under
+  its own `worker_id`. A crash mid-capture therefore costs one attempt, not a 3-minute wait.
+- **Rule for that to be safe:** one `worker_id` must equal exactly one worker process. Two
+  concurrent processes on the Mac mini need two ids (`mini-1`, `mini-2`).
+- **No worker running:** nothing is reaped, and nothing could be processed anyway. The admin queue
+  shows the worker as offline, and the processing row's heartbeat age shows it is stuck. Staff can
+  `requeue_capture` or `cancel_capture`.
+
+### 7.3 What each party sees
+
+| Party | `queued` / `processing` | `done` | `failed` |
+|---|---|---|---|
+| Customer (portal) | chip **"Processing scan"** | no chip, normal drawer card | chip **"Rescan needed"**, sub-copy: *"We couldn't build a usable scan of this drawer. Open tidyCAM and scan it again."* |
+| tidyCAM user | own capture row: status | own row: `done` | own row: `failed`, and a "Rescan" action on the drawer |
+| Staff (portal admin) | queue row: age, attempt n/limit, worker, heartbeat age | row with outputs | row with `error`, plus **Requeue** / **Cancel** |
+| tidyCAD | nothing new (drawer not yet usable: `photo_url` null) | `photo_url` / `point_cloud_url` as today | nothing new |
+
+Notification on the transition to `rescan_needed`, by email or the existing Discord channel, is out
+of scope here. The transition is the hook to attach it to (§11).
+
+---
+
+## 8. Idempotency and fencing
+
+| Operation | Why a retry is safe |
+|---|---|
+| Frame upload | Names are immutable, uploads use `upsert:false`, and `409 Duplicate` means done. No client role can update or delete. |
+| `create_capture` | The client supplies `capture_id`, and a replay returns the same row. Reusing an id for another drawer or user gives `23505`. Two concurrent first calls race on the PK: the loser gets `23505` and its retry returns the row. |
+| `claim_next_capture` | `FOR UPDATE SKIP LOCKED` hands each queued row to exactly one caller. A worker that crashes after claiming loses that attempt (reaped on its next claim). The row is never processed twice concurrently. |
+| `worker_heartbeat` | Upsert. The boolean result is the worker's only "keep going" signal. |
+| `complete_capture` | Fenced by `(worker_id, attempt_count)`. A replay of the same attempt and `ortho_url` returns the row. A stale fence raises `40001`, and the worker discards its result; its timestamped uploads are harmless orphans. |
+| `fail_capture` | A stale fence is a no-op. |
+| Drawer writes | Fill-if-empty, plus the `current_capture_id` pointer, means a replay or late finisher cannot double-apply or clobber anything. |
+| `requeue_capture` / `cancel_capture` | No-op if the capture is already in the target state. |
+| §5.3 stage advance (if accepted) | `set_drawer_stage`-style idempotency key `capture:<id>:scanned` in `status_event`. |
+
+**The fence is `attempt_count`.** Each claim increments it, and nothing ever decrements it. A staff
+requeue raises `attempt_limit` instead of resetting the count. A zombie worker still holding
+attempt *n* therefore cannot complete a capture that has since been reclaimed as attempt *n+1*,
+even if both claims carry the same `worker_id`.
