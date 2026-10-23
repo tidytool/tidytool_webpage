@@ -23,7 +23,8 @@ How to read this document:
 
 - **Card-mandated** items are fixed by the card.
 - Where the card is silent, the doc makes a choice and marks it **Decision (proposed)**. Each one is
-  also listed in §12, *Open questions for Sam*.
+  also listed in §12, *Open questions for Sam*. Choices Sam has made are marked
+  **Decision (Sam, 2026-10-23)**.
 - Every "exists" claim cites the migration file that created the object.
 
 ---
@@ -134,8 +135,8 @@ One row is one attempt by a customer or staff member to scan one drawer. A resca
 | `id` | `uuid` PK, default `gen_random_uuid()` | ✓ | **Supplied by tidyCAM** (uuid v4). Frames are uploaded under `<drawer_id>/<capture_id>/` *before* the row exists, the same pattern as `drawer.id`. The default exists only for staff or manual inserts made through RPCs. |
 | `drawer_id` | `uuid not null` → `drawer(id) on delete cascade` | ✓ | The drawer this scan is for. The drawer row must already exist. |
 | `created_by` | `uuid not null` | ✓ | `auth.uid()` of the caller of `create_capture`, set server-side. There is no FK, which mirrors `drawer.created_by`. |
-| `source` | `text` ∈ `device`, `worker` | ✓ | **Where reconstruction runs.** `worker` means queued for the Mac mini. `device` means reconstructed on the phone (the existing LiDAR path) and recorded for history only: the row is created already `done` and is never claimed. **Decision (proposed)** on the meaning. |
-| `frame_count` | `int not null` | ✓ | Number of image frames (`frames/frame_NNNN.{jpg,heic}`) uploaded, excluding sidecars. For `worker` it must be between 20 and 400 (**Decision (proposed)**). `create_capture` checks that this many frames actually exist in storage. |
+| `source` | `text` ∈ `device`, `worker` | ✓ | **Where reconstruction runs.** `worker` means queued for the Mac mini. `device` means reconstructed on the phone (the existing LiDAR path): the row is created already `done` and is never claimed. **Decision (Sam, 2026-10-23)** (Q2 (a)): the Pro on-device path **writes a `source='device'` row for every on-device scan**, for parity, so `capture_state` stays truthful (§5.2 rule 4, §9.1). |
+| `frame_count` | `int not null` | ✓ | Number of image frames (`frames/frame_NNNN.{jpg,heic}`) uploaded, excluding sidecars. For `worker` it must be between 20 and 400 (**Decision (Sam, 2026-10-23)**, Q7: accepted, tunable). `create_capture` checks that this many frames actually exist in storage. |
 | `status` | `text` ∈ `queued`, `processing`, `done`, `failed` | ✓ | See the state machine in §5. |
 | `error` | `text` | ✓ | Null unless the capture is `failed` or a failure was retried. Format: `<error_code>: <detail>`, with `error_code` taken from §7.1. **Staff-facing only.** Enforced by a column-level grant (below): no client role can select `error`, `timings`, `worker_id`, `claimed_at`, `heartbeat_at` or the attempt columns. Staff read them through `get_capture_queue()`. |
 | `ortho_url` | `text` | ✓ | Public URL of the ortho PNG in `drawer-assets` (§4.3). Required when `done`. |
@@ -249,7 +250,8 @@ capture is processing. With a single unattended Mac mini, that is the most likel
 -- TARGET SHAPE — not applied.
 create table public.capture_worker (
   worker_id          text primary key check (worker_id ~ '^[a-z0-9][a-z0-9_-]{1,40}$'),
-  auth_user_id       uuid not null,                 -- the worker account that last beat
+  auth_user_id       uuid not null,                 -- the worker account that last beat (null under the
+                                                    -- pilot's service_role: see the §3.5 migration-lane note)
   version            text,
   current_capture_id uuid references public.capture(id) on delete set null,
   first_seen_at      timestamptz not null default now(),
@@ -272,7 +274,7 @@ affects the admin display.
 `capture_state` is a **new axis on the drawer, not a tracker stage**:
 
 - It is not added to `status_def` or `status_transition`.
-- It never changes `stage`, `state` or `order.computed_status`. There is one proposed exception, in §5.3.
+- It never changes `stage`, `state` or `order.computed_status`. There is no exception (§5.3: Q4 declined).
 - The customer tracker steps stay 1–7 as they are.
 
 | `drawer.capture_state` | Set when the drawer's **current** capture becomes… | Customer copy (portal) |
@@ -359,22 +361,36 @@ The migration lane must therefore prove two deletes on dev: deleting a drawer th
 
 ### 3.5 The worker identity: `user_roles.role = 'worker'`, `is_worker()`
 
-**Decision (proposed).** The Mac mini signs in as a **dedicated Supabase auth user**, one per
-environment (for example `worker@thetidytool.com`), with `user_roles.role = 'worker'`. It does
-**not** use the service-role key.
+**Decision (Sam, 2026-10-23)** **(Q1 (a)): for the pilot the Mac mini uses the service-role key.** The dedicated
+`worker`-role auth user is **deferred until after the pilot** (after Oct 30), together with
+everything that exists only to make it safe (§9.3 EmployeesList, the §10 user setup, the §13.6
+runbook).
 
-Why:
-
-- The service-role key bypasses all RLS on all tables, from an unattended box.
-- A role-scoped user can reach only the worker RPCs and the storage prefixes in §4.
-
-The rejected alternative was keeping the service-role key in the worker's keychain. It is simpler,
-but its blast radius is the largest possible.
+- **How the RPCs accept it:** `is_worker()` also returns true for `service_role` callers, so
+  `claim_next_capture`, `worker_heartbeat`, `complete_capture` and `fail_capture` accept the
+  mini's service-role key. This is a body-only `create or replace` in follow-up migration
+  `20261023140000_pilot_decisions.sql` (in progress on #39); the worker-role branch of the
+  function is unchanged.
+- **Blast radius, stated plainly:** the service-role key bypasses all RLS on all tables and all
+  storage policies, from an unattended box. That is the largest possible blast radius, and it is
+  **accepted for the pilot only**. The mitigations:
+  - the key lives only in `tools/worker/.env` on the Mac mini (gitignored, placed by Sam), never
+    in the app bundle and never in a committed file;
+  - the worker refuses to start if its URL is the prod ref (`tkrrvpoupekrjqditupi`) while it runs
+    in dev mode;
+  - the worker calls only the RPCs and storage paths listed in §9.2.
+- **Post-pilot target (unchanged design):** a dedicated Supabase auth user per environment with
+  `user_roles.role = 'worker'`, whose reach is only the worker RPCs and the §4 storage prefixes.
+  Moving to it is a separate change after Oct 30.
+- **Migration-lane note:** under `service_role`, `auth.uid()` is null. Anything the worker RPCs
+  record from `auth.uid()` (for example `capture_worker.auth_user_id`, declared `not null`) must
+  accept that; `20261023140000` has to handle it, and its verification must show a service-role
+  claim, heartbeat and complete.
 
 `is_worker()` is **not** folded into `is_staff()`. The worker cannot read the drawer, order or
 customer tables. It sees only what the RPCs hand it.
 
-**As built (T2-L1, #39): how that is enforced.** The existing policies alone would not do it.
+**As built (T2-L1, #39): how that is enforced for the post-pilot worker user.** The existing policies alone would not do it.
 `order_insert_authenticated` and `drawer_insert_authenticated` (`20260628062931_remote_schema.sql`)
 admit any authenticated user, so a worker user could insert orders and drawers. The migration
 therefore adds three **RESTRICTIVE** policies that AND with every existing permissive policy:
@@ -400,10 +416,15 @@ create policy customer_deny_worker on public.customer as restrictive
 - **Proof:** only the INSERT tests exercise these policies, test 28 (`order`) and test 32
   (`drawer`). SELECT, UPDATE and DELETE on `order` (tests 27, 29, 30) were already refused by the
   existing policies.
-- These are new RLS on core tables, which is a human gate (CLAUDE.md rule 4).
+- These are new RLS on core tables, which is a human gate (CLAUDE.md rule 4). Accepted
+  (**Decision (Sam, 2026-10-23)**).
+- **Under the pilot's service-role key they are inert:** the policies are `to authenticated`, and
+  `service_role` bypasses RLS anyway. They stay in place because they are correct for the
+  post-pilot worker user.
 
 ```sql
--- TARGET SHAPE — not applied. Widening a CHECK is expand-only.
+-- TARGET SHAPE as of 20261023120000. 20261023140000 replaces the is_worker() body for the pilot
+-- (Q1 (a)) so that service_role callers also count; the exact body is the migration's.
 alter table public.user_roles drop constraint user_roles_role_check;
 alter table public.user_roles add constraint user_roles_role_check
   check (role = any (array['admin','user','staff','worker']::text[]));
@@ -427,9 +448,9 @@ grant execute on function public.is_worker() to authenticated, service_role;
 |---|---|
 | id / name | `scan_frames` |
 | public | **false**. No public URLs ever exist for frames. |
-| file_size_limit | 25 MB per object (**Decision (proposed)**) |
+| file_size_limit | 25 MB per object (**Decision (Sam, 2026-10-23)**, Q7: accepted, tunable) |
 | allowed_mime_types | `image/jpeg`, `image/heic`, `application/json` |
-| created by | The lane's migration (`insert into storage.buckets … on conflict do nothing`), so that dev and test branches replay it. Today's buckets were created in the dashboard, which is a known gap (`migrations/README.md`, "Known gaps"). **Decision (proposed).** |
+| created by | The lane's migration (`insert into storage.buckets … on conflict do nothing`), so that dev and test branches replay it. Today's buckets were created in the dashboard, which is a known gap (`migrations/README.md`, "Known gaps"). **Decision (Sam, 2026-10-23)** (Q9: in the migration). |
 
 **Path convention.** Everything is stored under the drawer, then the capture:
 
@@ -469,6 +490,11 @@ scan_frames/
 | `scan_frames/<drawer_id>/<capture_id>/…` | **Insert only**, as `owner = auth.uid()`. Allowed only when all three hold: `_can_capture_drawer(drawer_id)` (§6.1); no `capture` row exists yet for `capture_id`; the caller owns every object already under that prefix. Select only its own objects, to resume an upload. | Select (download) all | Select all (signed-URL preview, §4.4) | None |
 | `drawer-assets/<drawer_id>/orders/<order_id\|unassigned>/photo_<ms>.png` | Unchanged (today's policies) | Insert as owner (already allowed by `drawer_assets_insert`) | Unchanged | Read through the public URL (unchanged) |
 | `lidar_scans/<drawer_id>/orders/<order_id\|unassigned>/model_<ms>.usdz` | Unchanged | Insert as owner (already allowed by "Allow authenticated uploads to lidar_scans") | Unchanged | Read through the public URL (unchanged) |
+
+**Pilot (Q1 (a)):** the worker uses the service-role key, which bypasses storage RLS. The
+"Worker" column above describes the post-pilot worker user. During the pilot the worker reads
+`scan_frames` and writes `drawer-assets` / `lidar_scans` as `service_role` (objects get a null
+`owner`), and it must keep to exactly those paths (§9.2).
 
 ```sql
 -- TARGET SHAPE — not applied.
@@ -616,10 +642,14 @@ The transition table is normative. No other transition is legal, and only the na
    Consequence: a rescan of a drawer that already has a photo produces its result on the `capture`
    row, and the drawer still reads `ready`. Adopting that newer result is a staff decision; see §12 Q6.
 3. **Capture transitions never touch `stage`, `state`, `status_event`, `drawer_event`,
-   `capture_quality`, `claimed_by` or `order.*`.** The one exception is the §5.3 proposal.
+   `capture_quality`, `claimed_by` or `order.*`.** There is no exception (§5.3: Q4 declined).
    Failure in particular does **not** put the drawer `on_hold` or `rework`. "Rescan needed" lives
    only on `capture_state`.
-4. **Customer display is derived, and a photo always wins.** **Decision (proposed), rule (b).**
+4. **Customer display is derived, and a photo always wins.** **Decision (Sam, 2026-10-23)**: **Q2 (a)**, with the
+   photo-wins rule kept as a safety net.
+   - **Q2 (a):** the Pro on-device path writes a `capture` row with `source='device'` for every
+     on-device scan or rescan (§9.1), so `capture_state` and `current_capture_id` stay truthful.
+     This is new tidyCAM work, carded as §13.5.
    - **The rule:** the customer-facing chip ("Processing scan" or "Rescan needed") is shown only
      while `drawer.photo_url is null`. Once a drawer has a photo, its card is the normal drawer
      card, whatever `capture_state` says.
@@ -632,13 +662,12 @@ The transition table is normative. No other transition is legal, and only the na
    - **What it fixes:** without this rule, a drawer at `rescan_needed` that is then rescanned on a
      LiDAR device would show "Rescan needed" next to a valid photo. A remote capture still
      `queued` when an on-device photo lands would show "Processing scan" the same way.
-   - **No tidyCAM dependency:** the rule needs no tidyCAM change, and it also holds for app builds
-     already in the field.
+   - **Why keep it under (a):** app builds already in the field do not write device captures.
+     The photo-wins rule needs no tidyCAM change, so it still covers them.
    - **Staff view is raw:** `capture_state` itself is not rewritten; it stays the truthful status
      of the last *capture*. Staff views show it unfiltered.
-   - **Rejected alternative (a):** tidyCAM calls `create_capture(source='device')` for every
-     on-device scan of a drawer whose `capture_state` is not null. It keeps `capture_state`
-     current, but depends on every tidyCAM build doing so. It stays open for Sam as §12 Q2.
+   - **Rule (b) alone** (no device captures; the chip derived only from `photo_url`) was the
+     proposed alternative. Sam chose (a) for parity (§12 Q2).
 
 ### 5.3 Relation to the tracker (`drawer.stage`)
 
@@ -647,80 +676,36 @@ today (`20260727100000_status_backbone.sql` §8). So a remotely scanned drawer a
 tracker step 2 while it is still reconstructing. The `capture_state` chip ("Processing scan" or
 "Rescan needed") qualifies that step; no new step is added.
 
-**Decision (proposed), needs Sam (§12 Q4):** if staff pre-created the drawer at `stage = 'backlog'`
-and a customer then scans it remotely, `complete_capture` advances it `backlog → scanned`. That is
-an existing sanctioned `advance` in `status_transition`. `stage` is never raw-updated (CLAUDE.md
-rule 2), and `set_drawer_stage` is staff-only, so the worker cannot call it. That leaves two
-compliant write paths, and Sam picks one.
+**Decision (Sam, 2026-10-23)** **(§12 Q4): declined. A capture never advances the tracker.**
 
-**Option (b): reuse the existing legacy bridge.** No new stage writer.
-
-- `complete_capture` writes the legacy ops field, and only when the drawer is still `backlog`:
-  `update drawer set status = 'created_by_user' where id = … and stage = 'backlog'`.
-- `drawer_stage_bridge` then does the rest. It is the same path tidyCAM's legacy `status` writes
-  already take (`20260727100000_status_backbone.sql` l.471–479). The bridge:
-  - maps the value to `scanned`;
-  - accepts it only as an advance;
-  - sets `stage`;
-  - events it with `kind = 'bridge'`, `source = 'bridge'`, note `legacy drawer_status write`.
-- **Pros:** no new SECURITY DEFINER stage writer, and no body replace of `record_status_event`.
-- **Cons:**
-  - The event is attributed through `record_status_event`'s existing `actor_role` case. The
-    worker is neither admin nor staff, so the event reads `actor_role = 'customer'`, with the
-    worker's uid and email.
-  - The event carries no `capture_id` and no idempotency key. It is idempotent anyway, because
-    the bridge ignores non-advances.
-  - It writes the legacy `status` column, which ARCHITECTURE.md decision 3 calls tidyCAM's ops
-    field.
-
-**Option (a): a dedicated internal RPC.** `complete_capture` calls one new internal SECURITY
-DEFINER RPC, `_capture_advance_stage(p_drawer_id uuid, p_capture_id uuid)`. It is revoked from
-`authenticated` and reachable only from `complete_capture`, and it mirrors `set_drawer_stage` step
-for step:
-  1. It locks the drawer `for update`.
-  2. If the stage is not `backlog`, it returns (`p_expected_stage = 'backlog'` semantics).
-  3. It requires that `status_transition` has the row (`drawer`, `backlog`, `scanned`) with kind
-     `advance`.
-  4. It sets `stage = 'scanned'` and mirrors legacy `status` via `map_stage_to_legacy`.
-  5. It events the change with `record_status_event('drawer','stage','advance', …, p_source =>
-     'system', p_idempotency_key => 'capture:<capture_id>:scanned')`. A key already present means
-     return early.
-
-  It is a set_drawer_stage-equivalent with exactly one hard-coded transition. It is not a
-  general-purpose bypass.
-
-  Attribution needs a body-only `create or replace` of `record_status_event` (same signature)
-  adding `when public.is_worker() then 'worker'` to its `actor_role` case.
-
-  - **Pros:** correct attribution, an idempotency key and a capture link in the event.
-  - **Cons:** a second stage writer, and a body replace of a core function.
-
-**Recommendation: (b) for the pilot.** It needs the smallest new surface and reuses an
-already-reviewed path. Move to (a) if mis-attributed events matter in analytics.
-
-**Conditional on Q4(b) standing:** as built in T2-L1 (#39, `20261023120000` l.518-523),
-`complete_capture` makes the legacy write only for the drawer's **current** capture:
-`update drawer set status = 'created_by_user' where id = … and stage = 'backlog' and
-current_capture_id = <this capture>`. A superseded capture that finishes late therefore never
-advances the stage.
-
-- **Known no-op edge:** `drawer_stage_bridge` fires only when `status` actually changes
-  (`20260727100000_status_backbone.sql` l.471). A `backlog` drawer whose legacy status is already
-  `created_by_user` stays in `backlog` after a successful capture, and staff advance it by hand.
-  Pre-created drawers normally carry `backlogged_by_admin`, so this is rare. Test 106 pins the
-  behaviour.
-- If Sam declines Q4(b), this paragraph is removed and a follow-up migration drops that write
-  (l.518-523).
-
-If Sam declines both, the drawer stays in `backlog` until staff advance it, and nothing else in
-this contract changes.
+- **The rule:** `complete_capture` sets `capture_state = 'ready'` and fills `photo_url` /
+  `point_cloud_url` (fill-if-empty, §5.2). It never writes `drawer.stage`, `drawer.state`, the
+  legacy `drawer.status`, `status_event` or `order.*`.
+- **`scanned` means customer-confirmed.** The app's dimension confirm advances the drawer, through
+  the same path the Pro on-device flow uses today. A drawer that staff pre-created at `backlog`
+  therefore stays at `backlog` after its capture completes, until the customer confirms in the
+  app or staff advance it.
+- **As built:** `20261023120000` (#39) shipped the proposed option (b) bridge write
+  (l.518-523). Follow-up migration `20261023140000_pilot_decisions.sql` (in progress on #39) is a
+  body-only `create or replace` of `complete_capture` that removes it. Tests 66 and 106 flip to
+  "stage unchanged on complete".
+- **Rejected options,** for the record: (b) a legacy `status = 'created_by_user'` write picked up
+  by `drawer_stage_bridge` (mis-attributed `customer` event, no capture link); (a) a dedicated
+  internal `_capture_advance_stage()` (a second stage writer). Neither is built.
+- **Open gap (not decided here):** as the first paragraph says, a drawer that tidyCAM *inserts*
+  lands at `scanned` straight away through `drawer_stage_bridge`, before any capture or confirm.
+  Under Q10, Raj creates his drawers in-app, so his drawers reach `scanned` at insert, not at
+  confirm. Making "`scanned` = customer-confirmed" literal for in-app-created drawers needs the
+  app to defer that write until the confirm. That belongs to T2-L3, and Sam should confirm it.
 
 ---
 
 ## 6. RPC surface
 
 Every RPC is `security definer`, `set search_path = public`, `revoke … from public, anon`. Each is
-granted to `authenticated` and does its own role check inside. Internal helpers (`_…`) are also
+granted to `authenticated` and does its own role check inside. **Pilot (Q1 (a)):** `is_worker()`
+is also true for `service_role`, so the four worker RPCs must be executable by `service_role`
+(`20261023140000` verifies the grants). Internal helpers (`_…`) are also
 revoked from `authenticated`, except `_can_capture_drawer_path`, which storage RLS needs.
 
 | RPC | Caller (checked inside) | Purpose | Idempotency |
@@ -728,13 +713,13 @@ revoked from `authenticated`, except `_can_capture_drawer_path`, which storage R
 | `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → table(capture_id, drawer_id, source, status, created_at)` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Rejects a null or unknown `p_source` (`P0001`). Verifies the frames are in storage. Device output URLs must live under the drawer's `drawer-assets` / `lidar_scans` prefixes. Supersedes a queued predecessor. Returns the **narrow** client shape, never the full row (no `error` or `timings`). | Replaying the same id returns the same row. |
 | `claim_next_capture(p_worker_id) → table(capture_id, drawer_id, order_id, attempt, frame_count, frames_prefix, queued_at)` | `is_worker()` | Runs the reaper (§7.2), then T3. Returns 0 or 1 rows. `FOR UPDATE SKIP LOCKED`. | At most one claim per call. Two workers never get the same row. |
 | `worker_heartbeat(p_worker_id, p_capture_id default null, p_attempt default null, p_version default null) → boolean` | `is_worker()` | Records liveness. Bumps `capture.heartbeat_at` for a live claim **first**, then upserts `capture_worker` (§8 lock order). | Safe to repeat. `false` means the claim is lost, the attempt is wrong, or the capture is unknown or deleted, so the worker must abort. Such a beat still records liveness, with `current_capture_id = null` (§3.3), and never raises an FK error. |
-| `complete_capture(p_capture_id, p_worker_id, p_attempt, p_ortho_url, p_model_url default null, p_timings default null) → capture` | `is_worker()` with the live claim | T4 plus the drawer writes. | Replaying the same attempt and `ortho_url` is a no-op. A stale fence raises `40001`. |
+| `complete_capture(p_capture_id, p_worker_id, p_attempt, p_ortho_url, p_model_url default null, p_timings default null) → capture` | `is_worker()` with the live claim | T4 plus the drawer writes (§5.2). Never writes `stage` or the legacy `status` (§5.3, Q4 declined; the bridge write is removed by `20261023140000`). | Replaying the same attempt and `ortho_url` is a no-op. A stale fence raises `40001`. |
 | `fail_capture(p_capture_id, p_worker_id, p_attempt, p_error_code, p_error default null, p_timings default null) → capture` | `is_worker()` with the live claim | T5/T6. The server decides retryability from the code (§7.1). | A stale fence is a no-op that returns the current row. |
 | `requeue_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T11. Allowed only for the drawer's current capture, with `source='worker'`, from `failed` or `processing`. Sets `attempt_limit = attempt_count + 3` and appends a `requeued` attempt entry (§3.2). **As built:** a non-empty `p_reason` is required. Errors: not staff `42501`; empty reason, `device` source, `done` (terminal: rescan instead) or not the current capture → `P0001`; unknown id `P0002`. | No-op if already `queued`. |
 | `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10, from `queued` or `processing`. `error = 'cancelled: <reason>'`; appends a `cancelled` entry only if it was `processing` (§3.2). **As built:** a non-empty `p_reason` is required. It does **not** require the current capture. Errors: not staff `42501`; empty reason or `done` → `P0001`; unknown id `P0002`. | No-op if already `failed`. |
 | `get_my_capture_status() → table(drawer_id, display_state, capture_updated_at)` | any signed-in user | Customer view, with the same visibility as `get_my_drawers()`. `display_state` follows §5.2 rule 4: `null` when `photo_url is not null`, `'processing'` for `queued`/`processing`, `'rescan_needed'` for `rescan_needed`, otherwise `null`. Only rows with a non-null `display_state` are returned. No error text, no timings. | Read-only. |
 | `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. **As built:** `captures` is capped at the newest 500 rows, ordered by `created_at desc`; `customer_name` is `coalesce(order.customer_name, customer.name)`. | Read-only. |
-| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)`; `_capture_advance_stage(uuid, uuid)` only if §5.3 option (a) is chosen | internal | Helpers. | `_capture_advance_stage`: `status_event` idempotency key |
+| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)` | internal | Helpers. | — |
 
 Why `get_my_capture_status()` is a new RPC: adding a column to `get_my_drawers()` would change its
 return type, which needs a drop and recreate. That breaks in place, and it is the same "cannot
@@ -1028,11 +1013,8 @@ begin
    where d.id = v.drawer_id and d.current_capture_id = v.id;
   perform set_config('tidytool.capture_write', 'off', true);
 
-  -- §5.3 (proposed, pending Sam; current capture only). Option (b), recommended:
-  --   update public.drawer set status = 'created_by_user'
-  --    where id = v.drawer_id and stage = 'backlog';            -- drawer_stage_bridge advances + events it
-  -- Option (a):
-  --   perform public._capture_advance_stage(v.drawer_id, v.id);   -- backlog → scanned, evented, idempotent
+  -- §5.3: no stage or legacy-status write (Q4 declined, Sam 2026-10-23). The option (b) bridge
+  -- write shipped in 20261023120000 is removed by 20261023140000.
 
   update public.capture_worker w
      set current_capture_id = null, last_seen_at = now()
@@ -1191,13 +1173,13 @@ final at once, because retrying the same frames cannot help. Infrastructure prob
 
 ### 7.2 Stale claims, retry cap and timings
 
-| Parameter | Value (**Decision (proposed)**) |
+| Parameter | Value (**Decision (Sam, 2026-10-23)**, Q7: accepted as tunable config) |
 |---|---|
 | Worker poll interval when the queue is empty | 10 s (`claim_next_capture`) |
 | Heartbeat while processing | every 30 s (`worker_heartbeat` with `p_capture_id`, `p_attempt`) |
 | Heartbeat while idle | every 60 s (`worker_heartbeat` without a capture) |
 | Stale claim | `heartbeat_at` older than **3 min** |
-| Hard wall-clock cap | `claimed_at` older than **45 min** |
+| Hard wall-clock cap | `claimed_at` older than **45 min**, **pending `.full` timing**: not signed until the `.full` fixture time is known (rule of thumb: cap ≈ 3× the observed `.full` time on 100 frames) |
 | Retry cap | `attempt_limit = 3` claims per capture (staff requeue adds 3) |
 | Worker shown offline in admin | `capture_worker.last_seen_at` older than 3 min |
 
@@ -1313,10 +1295,16 @@ It does **not** call `get_my_drawers()` and has no capture code.
   - `get_my_capture_status()` for the customer-facing `display_state`.
   - Staff builds may read `drawer.capture_state` from their drawer `select()`. Model decoding must
     tolerate the new keys.
-- **Pilot customers on staff-created drawers.** Drawer RLS (`drawers select`,
-  `20260628062931_remote_schema.sql`) does not let a customer select a drawer they did not create.
-  Listing such drawers is **new L1 work**, through `get_my_drawers()`
-  (`20260706000000_portal_durable_model_and_admin.sql`), which tidyCAM does not call today (§12 Q10).
+- **Pilot drawer creation,** **Decision (Sam, 2026-10-23)** (§12 Q10): **Raj creates the order and drawers
+  in-app**, so every drawer is his own and the existing drawer RLS covers it.
+  - **Fallback:** if L1's order form is not device-verified by Oct 29, Sam pre-creates the order
+    shell.
+  - **Caveat for the fallback:** `drawer_insert_authenticated`
+    (`20260628062931_remote_schema.sql`) lets a user insert drawers only into orders *they*
+    created, and `drawers select` does not show a customer a drawer they did not create. A
+    Sam-created shell therefore also needs either staff-created drawers listed through
+    `get_my_drawers()` (`20260706000000_portal_durable_model_and_admin.sql`; tidyCAM does not call
+    it today) or the order created on Raj's behalf. Decide before Oct 29 if the fallback is used.
 - **Sequence (new):**
   1. The drawer row exists. tidyCAM creates it as today (client-generated `drawer.id`,
      `photo_url` null), or staff pre-created it.
@@ -1326,17 +1314,27 @@ It does **not** call `get_my_drawers()` and has no capture code.
   5. Show status from `get_my_capture_status()`. Realtime on `drawer` is optional; `drawer` is
      already published (`20260727100000_status_backbone.sql`).
 - **For a remote capture, leave `photo_url` and `point_cloud_url` empty.** The worker fills them.
-- **On-device path:** unchanged, and it does **not** create captures (§5.2 rule 4, §12 Q2). An
-  on-device scan or rescan writes `photo_url` directly, as it does today. The customer chip then
-  disappears because a photo exists.
+- **On-device (Pro) path, Q2 (a):** after an on-device scan or rescan uploads its ortho and
+  model as today, tidyCAM calls `create_capture(capture_id, drawer_id, 0, 'device', p_ortho_url,
+  p_model_url, p_timings)`. That inserts a `done` row (T2), sets `capture_state = 'ready'` and
+  moves `current_capture_id`, so `capture_state` stays truthful. The photo write itself is
+  unchanged. New tidyCAM work (§13.5); builds in the field that skip it are still covered by the
+  photo-wins rule (§5.2 rule 4).
 - **On "Rescan needed",** offer a rescan of the same drawer. That means a new `capture_id` and a
   new upload; the old capture is never reused.
 
 ### 9.2 Reconstruction worker (Mac mini) — claims, heartbeats, writes results
 
-- **Role:** a dedicated auth user with `user_roles.role = 'worker'` (§3.5), using the publishable
-  key. Credentials live in the macOS keychain, never in a repo or `.env` that is committed. One
-  user per environment (dev `gfkrebuioszsxanjdnsx`, prod `tkrrvpoupekrjqditupi`).
+- **Role, pilot (**Decision (Sam, 2026-10-23)**, Q1 (a)):** the **service-role key**, read from
+  `tools/worker/.env` on the Mac mini (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`). Sam places that
+  file; it is gitignored and never committed, and the key is never in the app bundle. The worker
+  refuses to start if its URL is the prod ref (`tkrrvpoupekrjqditupi`) while in dev mode. It never
+  reads the app's `.env*` files.
+- **Role, post-pilot:** a dedicated auth user with `user_roles.role = 'worker'` (§3.5), using the
+  publishable key, with credentials in the macOS keychain. One user per environment (dev
+  `gfkrebuioszsxanjdnsx`, prod `tkrrvpoupekrjqditupi`).
+- **Scope under the service-role key:** the key can reach everything, so the worker itself must
+  keep to the reads and writes below.
 - **Reads:**
   - the `claim_next_capture` result;
   - `scan_frames` objects under `frames_prefix` (authenticated `download`, and `list` for
@@ -1387,6 +1385,7 @@ It does **not** call `get_my_drawers()` and has no capture code.
   - An optional frame preview mints `createSignedUrl` server-side per render, with no URL
     persisted or cached (§4.4).
 - **Roles UI: a required code change, which must ship *before* the worker user exists.**
+  **Post-pilot:** no worker user exists during the pilot (Q1 (a)), so this is off the pilot path.
   - **The problem:** `src/components/EmployeesList.tsx` derives `isAdmin` and `isStaff` from
     `user.roles` (l.73–74). It offers **Grant staff** (l.211) and **Make admin** (l.219) to any
     user who is neither. A `worker`-only user would therefore be one click away from staff or
@@ -1454,18 +1453,21 @@ There is one additive migration, written by the migration lane per `migrations/R
    so this is a metadata-only change. Add the guard trigger.
 4. Create the `scan_frames` bucket, the two storage policies and `_can_capture_drawer_path`.
 5. Add the RPCs and grants (§6).
-6. *Only if Sam accepts §5.3*:
-   - **Option (b):** the guarded legacy-`status` write in `complete_capture`. No other change.
-   - **Option (a):** a body-only `create or replace` of `record_status_event` adding the `worker`
-     actor role, plus the internal `_capture_advance_stage()` and its call from `complete_capture`.
+6. ~~§5.3 stage advance~~: **Q4 declined** (Sam, 2026-10-23). No stage write.
 
 **As built (T2-L1, #39):** two migrations, both applied to dev and byte-verified; prod is Sam's.
 
-- **`20261023120000_remote_capture_queue.sql`** covers steps 1–6, with option (b) for step 6. It
+- **`20261023120000_remote_capture_queue.sql`** covers steps 1–5 and shipped step 6 as the proposed option (b) bridge write, which
+  `20261023140000` removes (Q4 declined). It
   also adds a step between 3 and 4: the three RESTRICTIVE `*_deny_worker` policies on `drawer`,
   `order` and `customer` (§3.5).
 - **`20261023130000_worker_heartbeat_lock_order.sql`** is a body-only `create or replace` of
   `worker_heartbeat`, with the same signature and grants (§6.1, §8).
+- **`20261023140000_pilot_decisions.sql`** (in progress on #39, Sam's 2026-10-23 decisions):
+  body-only `create or replace` of `is_worker()` (also true for `service_role`, Q1 (a)) and of
+  `complete_capture` (the option (b) bridge write removed, Q4 declined). Its verification adds
+  service-role claim, heartbeat and complete cases, and flips tests 66 and 106 to "stage unchanged
+  on complete".
 
 What the migration leaves alone:
 
@@ -1480,8 +1482,12 @@ What the migration leaves alone:
   drawer insert, upload and rescan writes, tidyCAD's design flow, and the portal as it is today.
   Using the remote path needs the new L-lane work in §9, plus the coordinated follow-ups in §13.
 
-**Out-of-migration setup is Sam's job, on both dev and prod.** Creating an auth user and granting a
-role is auth work, and auth is high-risk. Agents do not do it on either environment. Sam:
+**Pilot setup (Q1 (a)):** Sam places `tools/worker/.env` (service-role key) on the Mac mini, dev
+first. No auth user is created for the pilot.
+
+**Post-pilot (deferred until after Oct 30): worker-user setup.** Out-of-migration setup is Sam's
+job, on both dev and prod. Creating an auth user and granting a role is auth work, and auth is
+high-risk. Agents do not do it on either environment. Sam:
 
 1. Creates the worker auth user. The email must **not** match any `customer.email`, or the
    `link_customer_on_auth` trigger (`20260704000000_durable_identity.sql` l.114–141) would link
@@ -1502,6 +1508,8 @@ role is auth work, and auth is high-risk. Agents do not do it on either environm
 1. Drop the RPCs, the guard trigger, the two drawer columns, `capture_worker`, `capture`, the
    storage policies, and the three `*_deny_worker` policies on `drawer`, `order` and `customer`.
    Drop the policies before the role check is restored, because they call `is_worker()`.
+   If only `20261023140000` must be undone, re-apply the `is_worker()` and `complete_capture`
+   bodies from `20261023120000` instead.
 2. Delete the empty `scan_frames` bucket.
 3. Restore the old role check.
 
@@ -1515,8 +1523,8 @@ Once customer frames exist, deleting them is "deleting data", which is high-risk
   the cascaded captures. Their `error` and `timings` are lost.
 - **Orphans:** the `scan_frames/<drawer_id>/…` objects are left in the bucket.
 - **Not exercised end to end:** `20260910175336` is not applied on dev. The T2-L1 delete check had
-  to disable `status_event_no_delete` inside its rolled-back transaction. Re-run it on a
-  `with_data` branch before relying on it.
+  to disable `status_event_no_delete` inside its rolled-back transaction. A re-run on a
+  `with_data` branch is **skipped for the pilot** (Sam, 2026-10-23).
 - **Open:** whether to accept this or extend `_admin_audit` and add frame cleanup (§11).
 
 **Dev verification the migration lane must show** (SQL against dev; record in its `verification.md`):
@@ -1526,6 +1534,7 @@ Once customer frames exist, deleting them is "deleting data", which is high-risk
 - [ ] `update drawer set capture_state = 'ready'` as owner or staff → `42501`. tidyCAM's normal
       drawer update payload still succeeds.
 - [ ] Two sessions calling `claim_next_capture` concurrently get different rows (or one empty).
+      **Skipped for the pilot** (Sam, 2026-10-23): needs two live sessions.
 - [ ] Back-dating `heartbeat_at` by 4 min makes the next claim requeue the row and append an
       `attempts[]` entry. The third loss → `failed`, `retries_exhausted`, `rescan_needed`.
 - [ ] `complete_capture` with an old attempt → `40001`. A replay of the live attempt returns the
@@ -1542,10 +1551,11 @@ Once customer frames exist, deleting them is "deleting data", which is high-risk
       `/drawer-assets/<drawer_id>/` → error.
 - [ ] `get_my_capture_status()` returns `display_state = null` once `photo_url` is set, even with
       `capture_state = 'rescan_needed'`.
-- [ ] Deleting a drawer that has captures (the admin bulk-delete path) succeeds. Deleting a capture
+- [ ] Deleting a drawer that has captures (the admin bulk-delete path) succeeds (real purge path
+      on a `with_data` branch: **skipped for the pilot**). Deleting a capture
       row directly nulls `drawer.current_capture_id` and `capture_state` without a guard error.
 - [ ] Concurrent `create_capture` (new capture on drawer D) and `complete_capture` (D's current
-      capture) both finish with no `40P01`.
+      capture) both finish with no `40P01`. **Skipped for the pilot** (Sam, 2026-10-23).
 - [ ] Supabase security advisors show no new findings (all functions pin `search_path`).
 
 Any change to names, shapes or semantics here is a **contract change**: amend this document first.
@@ -1564,8 +1574,9 @@ Engineer review lens.
   transition).
 - **Adopting a newer capture:** the "adopt / promote" action for a rescan of a drawer that already
   has a photo (§12 Q6).
-- **Scale and dimensions:** for remote captures (§12 Q11). The worker writes no
-  `dimensions`, `calibration_matrix` or corners in v1.
+- **Scale and dimensions:** decided (§12 Q11): scale comes **only** from the customer's in-app
+  dimension confirm. The worker writes no `dimensions`, `calibration_matrix` or corners, in v1 or
+  later, and no other source of scale is used.
 - **Security work tracked elsewhere:** the tidyCAM approval gate (`is_approved()`) and the tightening
   of the existing `drawer-assets` and `lidar_scans` policies. Both live in
   `TIDYCAM-launch-coordination.md`.
@@ -1583,6 +1594,10 @@ currently says.
 
 1. **Worker identity** (§3.5): a dedicated `worker`-role auth user, or the service-role key on the
    Mac mini? *Recommendation: the role user, for its smaller blast radius.*
+
+   **Decision (Sam, 2026-10-23)**: **(a) the service-role key on the Mac mini for the pilot.** The worker role
+   user and EmployeesList (§13.1) are deferred until after Oct 30. `20261023140000` makes
+   `is_worker()` true for `service_role`; the deny-worker policies stay (§3.5).
 2. **On-device scans vs `capture_state`** (§3.1, §5.2 rule 4): this doc reads `source` as *where
    reconstruction ran*. An on-device scan or rescan writes `photo_url` directly and never touches
    `capture_state`.
@@ -1594,6 +1609,9 @@ currently says.
      truthful, at the cost of a tidyCAM dependency and of old builds in the field.
 
    *Recommendation: (b).*
+
+   **Decision (Sam, 2026-10-23)**: **(a).** The Pro on-device path writes a `capture` row with `source='device'`
+   for parity. The photo-wins rule stays as the safety net for builds in the field. §13.5 applies.
 3. **Infra failures after retries** (§7.1): show the customer "Rescan needed" for
    `retries_exhausted` too, even though their frames may be fine? The alternative is to keep
    showing "Processing scan" and alert staff only. *Recommendation: show "Rescan needed"; it is
@@ -1608,6 +1626,10 @@ currently says.
      but it adds a second stage writer.
 
    *Recommendation: yes, via (b), for the pilot. Pairs with Q10.*
+
+   **Decision (Sam, 2026-10-23)**: **declined.** `scanned` means customer-confirmed: the worker sets
+   `capture_state = 'ready'` only, and the app's confirm advances the stage, as on the Pro path.
+   `20261023140000` removes the bridge write (§5.3).
 5. **Who may capture** (§6.1 `_can_capture_drawer`): staff, the drawer's creator, or any customer
    who can see it (whole organization). Should captures be blocked after design starts
    (`stage ≥ design_queue`)? *Recommendation: allow any non-cancelled drawer and let staff judge.*
@@ -1618,10 +1640,16 @@ currently says.
 7. **Numbers** (§3.1, §4.1, §7.2): 20–400 frames, 25 MB per object, 30 s heartbeat, 3 min stale,
    45 min hard cap, 3 attempts. *Recommendation: confirm against `tidycam-worker` timings on the
    Mac mini before the migration lane freezes them.*
+
+   **Decision (Sam, 2026-10-23)**: **accepted as tunable config.** The 45 min cap is **pending `.full` timing**
+   (rule of thumb: cap ≈ 3× the observed `.full` time on 100 frames); the other numbers stand.
 8. **Frame retention:** keep frames forever, or delete them N days after `done`? Deleting is
    high-risk and Sam's call. *Recommendation: keep through the pilot, then decide.*
 9. **Bucket creation** (§4.1): in the migration (replayable on branches), or in the dashboard like
    the existing buckets? *Recommendation: in the migration.*
+
+   **Decision (Sam, 2026-10-23)**: **in the migration** (accepted, as built). Also accepted: the deny-worker
+   RLS, the requeue/cancel reason, the 500-row queue cap and null-source rejection.
 10. **Pilot drawer creation:** `drawer_insert_authenticated` lets a user insert drawers only into
     orders *they* created (`20260628062931_remote_schema.sql`). If Sam creates the Bonnell order,
     the customer's tidyCAM cannot add drawers to it.
@@ -1631,10 +1659,16 @@ currently says.
     - Option (b): a new create-drawer RPC, which is a separate card.
 
     *Recommendation: (a).*
+
+    **Decision (Sam, 2026-10-23)**: **Raj creates the order and drawers in-app.** Fallback: Sam pre-creates the
+    order shell if L1's order form is not device-verified by Oct 29 (see the §9.1 caveat).
 11. **Scale and dimensions for remote captures:** without LiDAR, the worker's ortho has no metric
     scale, and v1 writes no `dimensions`. Who supplies width and height: the customer in tidyCAM,
     or staff in tidyCAD from a reference object? This is not part of this contract, but it blocks
     design for remote drawers.
+
+    **Decision (Sam, 2026-10-23)**: **scale comes from the customer's in-app dimension confirm, and nothing
+    else** (§11).
 12. **Approval gate timing:** when `is_approved()` ships, it becomes a conjunct in
     `_can_capture_drawer` and in the `scan_frames` insert path. Does the Bonnell pilot run before
     or after the gate lands?
@@ -1662,6 +1696,8 @@ one should be carded and linked to the umbrella.
    - Hide Grant staff and Make admin for worker users.
    - Make the server actions refuse such targets.
    - **Must merge before Sam creates the worker user.**
+   - **Post-pilot, off the pilot path** (Q1 (a), Sam 2026-10-23): no worker user exists during
+     the pilot.
 2. **tidyCAD: guard Select on photo** (§9.4). Disable `scanned → design_queue` while `photo_url`
    is null, and optionally show `capture_state`.
 3. **worker CLI: queue I/O** (§9.2). Add the claim loop, heartbeat thread, `scan_frames`
@@ -1670,7 +1706,8 @@ one should be carded and linked to the umbrella.
 4. **tidyCAM: remote capture plus listing of pre-created drawers** (§9.1). Upload, call
    `create_capture`, use `get_my_drawers()` / `get_my_capture_status()`, and tolerate column
    grants (no `select=*` on `capture`).
-5. **tidyCAM: record on-device scans as captures.** Only if Sam picks rule (a) in Q2. Under the
-   recommended rule (b), no tidyCAM change is needed for on-device rescans.
+5. **tidyCAM: record on-device scans as captures.** **Required:** Sam chose rule (a) in Q2
+   (2026-10-23). Every Pro on-device scan or rescan calls `create_capture(source='device')` after
+   its upload (§9.1).
 6. **Runbook: worker user lifecycle** (Q13). Cover creation, rotation and revocation, all done by
-   Sam.
+   Sam. **Post-pilot, off the pilot path** (Q1 (a)).
