@@ -3,7 +3,46 @@
 Written down by the dispatcher. The reviewer and the systems-engineer lens are read-only and return
 their verdicts as text, so their substance is recorded here.
 
-## Final verdict (reviewer, round 2)
+## Round 3 — pilot decisions (commit 01454f1): reviewer APPROVE · SE lens COORDINATE
+
+```
+VERDICT: APPROVE
+Done-when (round 3 scope): 5/5 ✓ (Q1a service_role worker; auth.uid() null handled; Q4 bridge
+removed; tests flipped/added; byte-exact dev-only apply). Prod apply is Sam's.
+Checks run: typecheck ✓ · test:pricing ✓ 36/36 · test:labels ✓ 11/11 · build skipped (no portal/src)
+· db_test ✓ 130/130 on dev · db_apply --check dev: 26 byte-verified (DIVERGED only from the known
+20260910* LOCAL ONLY)
+MUST FIX: none
+Hardware sign-off needed: no
+```
+- **Byte-exact.** File md5 = dev history md5 = `000c2b409c2c7d701fdb95b42d90aef7`. 120000 and
+  130000 are untouched.
+- **Draft apply/revert.** The implementer applied a draft of 140000 to dev before the
+  auth_user_id finding, then reverted it (restored the bodies and deleted the history row) and
+  applied the final file. The reviewer compared md5(prosrc) on dev with the final files for
+  is_worker, complete_capture, claim_next_capture, worker_heartbeat and fail_capture: all match,
+  and nothing from the draft remains.
+- **complete_capture.** The only change is the removed §5.3(b) block. Lock order, replay check and
+  the attempt_count fence are identical; test 118 shows the fence under service_role.
+- **auth_user_id drop not null.** Safe: the claim/heartbeat upserts are the only writers, nothing
+  reads the column, and it has no FK or unique constraint.
+- **is_worker().** For every authenticated JWT the new disjunct is false; anon has no EXECUTE; with
+  no claims, coalesce(auth.role(), '') makes it false. Tests 123–130 are the negatives.
+- **Note.** Any service-role-key holder can now drive the queue: the Q1 (a) blast radius, accepted
+  for the pilot. The worker must call through PostgREST; a direct Postgres connection has no
+  claims and gets 42501.
+
+**SE lens: COORDINATE.**
+- No consumer breaks: portal admin.ts only calls auth.admin.*; publish_for_approval.py doesn't
+  branch on is_worker(); every is_worker() policy is `to authenticated`.
+- Removing the Q4 bridge write only affected `backlog` rows, so the insert-time `scanned` gap is not
+  worse.
+- Doc fixes F1–F3 and the reviewer's contract notes are committed on the #38 branch (f1a7605,
+  e92f3f8; unpushed, Sam pushes).
+- F3 needs Sam's confirmation: a staff-pre-created drawer reaches `scanned` only by a staff
+  advance. That is on the needs-sam card "Confirm 2 gaps in the Oct 23 decisions…".
+
+## Verdict (reviewer, round 2)
 
 ```
 VERDICT: APPROVE

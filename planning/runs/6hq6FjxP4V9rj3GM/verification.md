@@ -1,8 +1,9 @@
 # verification.md: T2-L1 capture schema + RLS (Todoist 6hq6FjxP4V9rj3GM)
 
 Branch `agent/6hq6FjxP4V9rj3GM-capture-schema`. Contract: `planning/remote-reconstruction-contract.md`
-on PR #38 (unmerged). Every "Decision (proposed)" is implemented as the §12 recommendation, including
-Q4 option (b) and Q9 (the bucket is created in the migration).
+on PR #38 (unmerged). Rounds 1–2 implemented every "Decision (proposed)" as the §12 recommendation.
+Round 3 (`20261023140000`) applies Sam's final 2026-10-23 decisions: Q1 (a) service-role worker and
+Q4 declined (the bridge advance is removed). See "Round 3 — pilot decisions" below.
 
 ## Plan (also posted as a comment on the card)
 1. One expand-only migration, `portal/supabase/migrations/20261023120000_remote_capture_queue.sql`.
@@ -17,16 +18,17 @@ Q4 option (b) and Q9 (the bucket is created in the migration).
 | Criterion | | Evidence |
 |---|---|---|
 | Migration in `portal/supabase/migrations/`, expand-only | ✓ | `20261023120000_remote_capture_queue.sql` adds tables, columns, functions, policies and the bucket. Its only `drop` replaces `user_roles_role_check` with a strictly wider check (`+ 'worker'`) in the same transaction, per contract §3.5/§10.1. `20261023130000_worker_heartbeat_lock_order.sql` is a body-only `create or replace` of `worker_heartbeat`: same signature, return type and grants. |
-| Applied to **dev** via db_apply | ✓ | Both files. See "Dev apply" below. |
-| Applied to **prod** via db_apply | ✗ | **Pending Sam.** Commands below, in order. |
-| RLS tests green | ✓ | 111/111 on dev. See "RLS tests" below. |
-| Migration synced byte-exact into the repo | ✓ | Each file's md5 matches its dev history md5: `dab876d045763014c8ce1d2458c32268` and `2b16beac2ceb88fc8a80145f1d20b4ca`. Each file has a header comment and no trailing newline, and db_apply stores the file bytes verbatim. |
+| Applied to **dev** via db_apply | ✓ | All three files (120000, 130000, 140000). `--check --env dev`: 26 byte-verified; DIVERGED only from the pre-existing local-only 20260910175336/175529. |
+| Applied to **prod** via db_apply | ✗ | **Pending Sam.** Three commands below, in order. |
+| RLS tests green | ✓ | 130/130 on dev, after round 3 (111/111 after round 2). See "RLS tests" and "Round 3" below. |
+| Migration synced byte-exact into the repo | ✓ | Each file's md5 matches its dev history md5: `dab876d045763014c8ce1d2458c32268` (120000), `2b16beac2ceb88fc8a80145f1d20b4ca` (130000), `000c2b409c2c7d701fdb95b42d90aef7` (140000). Each file has a header comment and no trailing newline, and db_apply stores the file bytes verbatim. The round-3 reviewer also matched dev's live function bodies (md5 of prosrc) to the final files. |
 | Typecheck clean | ✓ | `npm run typecheck` exits 0. `types.ts` is untouched, so no build is needed. |
 
-### Prod commands for Sam (run both, in this order)
+### Prod commands for Sam (run all three, in this order)
 ```
 python3 tools/db_apply.py portal/supabase/migrations/20261023120000_remote_capture_queue.sql --env prod --approved --reload-postgrest
 python3 tools/db_apply.py portal/supabase/migrations/20261023130000_worker_heartbeat_lock_order.sql --env prod --approved
+python3 tools/db_apply.py portal/supabase/migrations/20261023140000_pilot_decisions.sql --env prod --approved
 ```
 The first command needs `--reload-postgrest` because it adds REST-exposed RPCs. The second only
 replaces an existing function, so it needs no reload.
