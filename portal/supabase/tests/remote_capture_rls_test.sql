@@ -1,4 +1,4 @@
--- Remote capture queue: RLS, grant and state-machine tests (migration 20261023120000).
+-- Remote capture queue: RLS, grant and state-machine tests (migrations 20261023120000, 20261023130000).
 -- Contract: planning/remote-reconstruction-contract.md section 10 "Dev verification".
 --
 -- DEV ONLY. Run:  python3 tools/db_test.py portal/supabase/tests/remote_capture_rls_test.sql
@@ -116,7 +116,9 @@ insert into public.drawer (id, order_id, created_by, nickname, status, stage, ph
   ('30000000-0000-4000-8000-0000000000a3', '20000000-0000-4000-8000-0000000000a1',
    '00000000-0000-4000-8000-0000000000c1', 'cap-test dA3', 'created_by_user', null, null),
   ('30000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1',
-   '00000000-0000-4000-8000-0000000000c1', 'cap-test dB', 'created_by_user', null, null);
+   '00000000-0000-4000-8000-0000000000c1', 'cap-test dB', 'created_by_user', null, null),
+  ('30000000-0000-4000-8000-0000000000a4', '20000000-0000-4000-8000-0000000000a1',
+   '00000000-0000-4000-8000-0000000000c1', 'cap-test dA4', 'created_by_user', 'backlog', null);
 
 select pg_temp.is('fixture: order A linked to customer A',
   $q$select customer_id::text from public."order" where id = '20000000-0000-4000-8000-0000000000a1'$q$,
@@ -284,6 +286,8 @@ select pg_temp.is('heartbeat on live claim -> true',
   $q$select public.worker_heartbeat('cap-test-w1', '40000000-0000-4000-8000-0000000000a1', 1, '0.0.1')::text$q$, 'true');
 select pg_temp.is('heartbeat with wrong attempt -> false',
   $q$select public.worker_heartbeat('cap-test-w1', '40000000-0000-4000-8000-0000000000a1', 2)::text$q$, 'false');
+select pg_temp.is('heartbeat on an unknown capture -> false (no FK error)',
+  $q$select public.worker_heartbeat('cap-test-w3', '40000000-0000-4000-8000-0000000000ff', 1)::text$q$, 'false');
 select pg_temp.as_admin();
 select pg_temp.is('dA capture_state = processing',
   $q$select capture_state from public.drawer where id = '30000000-0000-4000-8000-0000000000a1'$q$, 'processing');
@@ -398,11 +402,11 @@ select pg_temp.is('staff requeue -> queued, attempt_limit = attempt_count + 3',
 select pg_temp.is('staff cancel -> failed cancelled',
   $q$select (c).status || ' ' || split_part((c).error, ':', 1)
      from (select public.cancel_capture('40000000-0000-4000-8000-0000000000a4', 'customer will rescan') c offset 0) s$q$, 'failed cancelled');
-select pg_temp.is('staff get_capture_queue lists the test workers and failures with error',
+select pg_temp.is('staff get_capture_queue lists the test workers (w1, w2, w3) and failures with error',
   $q$select (select count(*) from jsonb_array_elements(q->'workers') w where w->>'worker_id' like 'cap-test-%')::text || ' '
      || (select count(*) from jsonb_array_elements(q->'captures') c where c->>'capture_id' = '40000000-0000-4000-8000-0000000000a4'
            and c->>'error' like 'cancelled:%')
-     from public.get_capture_queue() q$q$, '2 1');
+     from public.get_capture_queue() q$q$, '3 1');
 
 -- ---------------------------------------------------------------- supersede (dB)
 select pg_temp.as_user('00000000-0000-4000-8000-0000000000b1');
@@ -446,6 +450,28 @@ select pg_temp.expect('deleting the current capture row directly succeeds (FK se
 select pg_temp.is('... and nulls drawer.current_capture_id + capture_state',
   $q$select coalesce(current_capture_id::text, 'null') || ' ' || coalesce(capture_state, 'null')
      from public.drawer where id = '30000000-0000-4000-8000-0000000000a2'$q$, 'null null');
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000e1');
+select pg_temp.is('heartbeat on a deleted capture -> false (no FK error)',
+  $q$select public.worker_heartbeat('cap-test-w1', '40000000-0000-4000-8000-0000000000a3', 1)::text$q$, 'false');
+
+-- Known, accepted edge of section 5.3 (b) (Q4 pending Sam): a backlog drawer whose legacy
+-- status is ALREADY 'created_by_user' does not advance, because drawer_stage_bridge fires only
+-- on a real status change. Pinned so a behaviour change is deliberate.
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000a1');
+select pg_temp.expect('A uploads + creates capture a5 on dA4 (backlog, status already created_by_user)',
+  $q$select pg_temp.upload('30000000-0000-4000-8000-0000000000a4', '40000000-0000-4000-8000-0000000000a5'),
+     (select status from public.create_capture('40000000-0000-4000-8000-0000000000a5', '30000000-0000-4000-8000-0000000000a4', 20))$q$);
+select pg_temp.as_admin();
+select pg_temp.front('40000000-0000-4000-8000-0000000000a5');
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000e1');
+select pg_temp.expect('worker claims + completes a5',
+  $q$select public.complete_capture(c.capture_id, 'cap-test-w1', c.attempt,
+     'https://x.supabase.co/storage/v1/object/public/drawer-assets/30000000-0000-4000-8000-0000000000a4/orders/o/photo_1.png')
+     from public.claim_next_capture('cap-test-w1') c$q$);
+select pg_temp.as_admin();
+select pg_temp.is('5.3(b) edge: backlog drawer with status already created_by_user stays backlog',
+  $q$select stage || ' ' || capture_state from public.drawer where id = '30000000-0000-4000-8000-0000000000a4'$q$, 'backlog ready');
+
 -- status_event is append-only and blocks any drawer delete on its own (prod's admin purge
 -- path lifts that with tidytool.allow_audited_purge, 20260910175336, not yet on dev). Lift it
 -- inside this rolled-back transaction so the test isolates the capture FK cycle.
@@ -462,6 +488,9 @@ select pg_temp.is('every new capture function pins search_path',
         '_can_capture_drawer_path','create_capture','_reap_stale_captures','claim_next_capture','worker_heartbeat',
         'complete_capture','fail_capture','requeue_capture','cancel_capture','get_my_capture_status','get_capture_queue')
       and not exists (select 1 from unnest(proconfig) c where c like 'search_path=%')$q$, '0');
+select pg_temp.is('worker_heartbeat updates capture before upserting capture_worker (lock order)',
+  $q$select (strpos(d, 'update public.capture') between 1 and strpos(d, 'insert into public.capture_worker'))::text
+     from pg_get_functiondef('public.worker_heartbeat(text,uuid,int,text)'::regprocedure) d$q$, 'true');
 select pg_temp.is('internal helpers are not executable by authenticated',
   $q$select string_agg(p, ',' order by p) from (values ('public._can_capture_drawer(uuid)'), ('public._sync_drawer_capture_state(uuid)'),
        ('public._reap_stale_captures(text)')) v(p) where has_function_privilege('authenticated', p, 'execute')$q$, null);
