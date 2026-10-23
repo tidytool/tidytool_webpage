@@ -532,8 +532,22 @@ tracker step 2 while it is still reconstructing. The `capture_state` chip ("Proc
 and a customer then scans it remotely, `complete_capture` advances it `backlog → scanned`.
 
 - This is an existing sanctioned `advance` in `status_transition`.
-- It is evented through `record_status_event('drawer','stage','advance', …, source => 'system',
-  idempotency_key => 'capture:<capture_id>:scanned')`.
+- **Write path:** `stage` is never raw-updated (CLAUDE.md rule 2). `set_drawer_stage` is staff-only,
+  so the worker cannot call it. Instead, `complete_capture` calls one new internal SECURITY DEFINER
+  RPC, `_capture_advance_stage(p_drawer_id uuid, p_capture_id uuid)`, which is revoked from
+  `authenticated` and reachable only from `complete_capture`. It mirrors `set_drawer_stage` step for
+  step:
+  1. It locks the drawer `for update`.
+  2. If the stage is not `backlog`, it returns (`p_expected_stage = 'backlog'` semantics).
+  3. It requires that `status_transition` has the row (`drawer`, `backlog`, `scanned`) with kind
+     `advance`.
+  4. It sets `stage = 'scanned'` and mirrors legacy `status` via `map_stage_to_legacy`.
+  5. It events the change with `record_status_event('drawer','stage','advance', …, p_source =>
+     'system', p_idempotency_key => 'capture:<capture_id>:scanned')`. A key already present means
+     return early.
+
+  It is a set_drawer_stage-equivalent with exactly one hard-coded transition. It is not a
+  general-purpose bypass.
 - That requires a body-only `create or replace` of `record_status_event` (same signature) to add
   `when public.is_worker() then 'worker'` to its `actor_role` case. Otherwise the event would be
   attributed as `customer`.
@@ -559,7 +573,7 @@ revoked from `authenticated`, except `_can_capture_drawer_path`, which storage R
 | `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10. `error = 'cancelled: <reason>'`. | No-op if already `failed`. |
 | `get_my_capture_status() → table(drawer_id, capture_state, capture_id, capture_updated_at)` | any signed-in user | Customer view. Same visibility as `get_my_drawers()`. Only drawers with `capture_state is not null`. | Read-only. |
 | `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. | Read-only. |
-| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)` | internal | Helpers. | — |
+| `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)`; `_capture_advance_stage(uuid, uuid)` only if §5.3 is accepted | internal | Helpers. | `_capture_advance_stage`: `status_event` idempotency key |
 
 Why `get_my_capture_status()` is a new RPC: adding a column to `get_my_drawers()` would change its
 return type, which needs a drop and recreate. That breaks in place, and it is the same "cannot
@@ -819,8 +833,8 @@ begin
    where d.id = v.drawer_id and d.current_capture_id = v.id;
   perform set_config('tidytool.capture_write', 'off', true);
 
-  -- §5.3 (proposed, pending Sam): if drawer.stage = 'backlog', advance to 'scanned' and event it
-  -- with idempotency key 'capture:' || v.id || ':scanned'.
+  -- §5.3 (proposed, pending Sam): only if this is the current capture —
+  --   perform public._capture_advance_stage(v.drawer_id, v.id);   -- backlog → scanned, evented, idempotent
 
   update public.capture_worker w
      set current_capture_id = null, last_seen_at = now()
@@ -1160,7 +1174,8 @@ There is one additive migration, written by the migration lane per `migrations/R
 4. Create the `scan_frames` bucket, the two storage policies and `_can_capture_drawer_path`.
 5. Add the RPCs and grants (§6).
 6. *Only if Sam accepts §5.3:* a body-only `create or replace` of `record_status_event` adding the
-   `worker` actor role, plus the `backlog → scanned` step in `complete_capture`.
+   `worker` actor role, plus the internal `_capture_advance_stage()` and its call from
+   `complete_capture`.
 
 What the migration leaves alone:
 
