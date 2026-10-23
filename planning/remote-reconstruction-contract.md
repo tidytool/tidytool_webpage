@@ -374,10 +374,11 @@ runbook).
 - **Blast radius, stated plainly:** the service-role key bypasses all RLS on all tables and all
   storage policies, from an unattended box. That is the largest possible blast radius, and it is
   **accepted for the pilot only**. The mitigations:
-  - the key lives only in `tools/worker/.env` on the Mac mini (gitignored, placed by Sam), never
-    in the app bundle and never in a committed file;
-  - the worker refuses to start if its URL is the prod ref (`tkrrvpoupekrjqditupi`) while it runs
-    in dev mode;
+  - the key lives only in the env file named by `$TIDYCAM_WORKER_ENV` (default
+    `~/.config/tidycam-worker/dev.env`, placed by Sam), outside every repo. The worker never reads
+    any file inside a repo for credentials, the key is never in the app bundle, and it is never in a
+    committed file;
+  - the worker refuses to start if its URL contains the prod ref (`tkrrvpoupekrjqditupi`);
   - the worker calls only the RPCs and storage paths listed in §9.2.
 - **Post-pilot target (unchanged design):** a dedicated Supabase auth user per environment with
   `user_roles.role = 'worker'`, whose reach is only the worker RPCs and the §4 storage prefixes.
@@ -1326,10 +1327,11 @@ It does **not** call `get_my_drawers()` and has no capture code.
 ### 9.2 Reconstruction worker (Mac mini) — claims, heartbeats, writes results
 
 - **Role, pilot (**Decision (Sam, 2026-10-23)**, Q1 (a)):** the **service-role key**, read from
-  `tools/worker/.env` on the Mac mini (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`). Sam places that
-  file; it is gitignored and never committed, and the key is never in the app bundle. The worker
-  refuses to start if its URL is the prod ref (`tkrrvpoupekrjqditupi`) while in dev mode. It never
-  reads the app's `.env*` files.
+  the env file named by `$TIDYCAM_WORKER_ENV`, default `~/.config/tidycam-worker/dev.env`
+  (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`). Sam places that file outside every repo. The
+  worker never reads any file inside a repo for credentials, including the app's `.env*` files, and
+  the key is never in the app bundle. The launchd plist sets `TIDYCAM_WORKER_ENV` to the same path.
+  The worker refuses to start if its URL contains the prod ref (`tkrrvpoupekrjqditupi`).
 - **Role, post-pilot:** a dedicated auth user with `user_roles.role = 'worker'` (§3.5), using the
   publishable key, with credentials in the macOS keychain. One user per environment (dev
   `gfkrebuioszsxanjdnsx`, prod `tkrrvpoupekrjqditupi`).
@@ -1482,8 +1484,8 @@ What the migration leaves alone:
   drawer insert, upload and rescan writes, tidyCAD's design flow, and the portal as it is today.
   Using the remote path needs the new L-lane work in §9, plus the coordinated follow-ups in §13.
 
-**Pilot setup (Q1 (a)):** Sam places `tools/worker/.env` (service-role key) on the Mac mini, dev
-first. No auth user is created for the pilot.
+**Pilot setup (Q1 (a)):** Sam places `~/.config/tidycam-worker/dev.env` (service-role key; the path is
+overridable with `$TIDYCAM_WORKER_ENV`) on the Mac mini, dev first. No auth user is created for the pilot.
 
 **Post-pilot (deferred until after Oct 30): worker-user setup.** Out-of-migration setup is Sam's
 job, on both dev and prod. Creating an auth user and granting a role is auth work, and auth is
