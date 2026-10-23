@@ -225,6 +225,20 @@ The server owns `attempts`. A caller's `p_timings` is stored under `client` when
 caller therefore can never overwrite the audit trail. Queue wait is derived as
 `claimed_at − created_at` and is not stored.
 
+**As built (T2-L1, #39): `attempts[].outcome` values.** Every entry carries `attempt`, `worker_id`,
+`claimed_at` and `ended_at`, plus:
+
+| `outcome` | Written by | Extra keys |
+|---|---|---|
+| `done` | `complete_capture` | none |
+| `retry` | `fail_capture`, retryable code under the cap | `error_code` |
+| `failed` | `fail_capture`, non-retryable code or cap reached | `error_code` |
+| `lost` | `_reap_stale_captures` (stale heartbeat or 45 min cap) | `error_code` (`worker_lost` / `timeout`) |
+| `requeued` | `requeue_capture` (staff) | `by` (staff uid), `reason` (≤ 500 chars) |
+| `cancelled` | `cancel_capture` (staff), **only when the capture was `processing`** | `by` (staff uid). The reason goes to `error` as `cancelled: <reason>`, not to the entry. |
+
+A cancel of a `queued` capture appends no entry, because no attempt was running.
+
 ### 3.3 `capture_worker` table (backs `worker_heartbeat`)
 
 **Decision (proposed).** The card names `worker_heartbeat` but does not say where liveness is
@@ -244,6 +258,14 @@ create table public.capture_worker (
 alter table public.capture_worker enable row level security;
 revoke all on table public.capture_worker from public, anon, authenticated;  -- read via get_capture_queue()
 ```
+
+**As built (T2-L1, #39): `current_capture_id` means the worker's live claim, else null.**
+`claim_next_capture` sets it. `complete_capture` and `fail_capture` clear it. `worker_heartbeat`
+sets it to `p_capture_id` only when that beat matched a live claim (`processing`, same `worker_id`,
+same attempt), and to null otherwise. A beat for a lost, wrong-attempt, unknown or deleted capture
+therefore clears the pointer instead of raising an FK error (`20261023130000`). A late beat for an
+old capture can null the pointer until the next beat for the new claim, about 30 s later. That only
+affects the admin display.
 
 ### 3.4 `drawer` columns: `capture_state`, `current_capture_id`
 
@@ -351,6 +373,34 @@ but its blast radius is the largest possible.
 
 `is_worker()` is **not** folded into `is_staff()`. The worker cannot read the drawer, order or
 customer tables. It sees only what the RPCs hand it.
+
+**As built (T2-L1, #39): how that is enforced.** The existing policies alone would not do it.
+`order_insert_authenticated` and `drawer_insert_authenticated` (`20260628062931_remote_schema.sql`)
+admit any authenticated user, so a worker user could insert orders and drawers. The migration
+therefore adds three **RESTRICTIVE** policies that AND with every existing permissive policy:
+
+```sql
+create policy drawer_deny_worker on public.drawer as restrictive
+  for all to authenticated
+  using (not (select public.is_worker())) with check (not (select public.is_worker()));
+create policy order_deny_worker on public."order" as restrictive
+  for all to authenticated
+  using (not (select public.is_worker())) with check (not (select public.is_worker()));
+create policy customer_deny_worker on public.customer as restrictive
+  for all to authenticated
+  using (not (select public.is_worker())) with check (not (select public.is_worker()));
+```
+
+- **Non-worker users are unaffected:** for them the policy is `true`. `(select …)` makes it run
+  once per statement.
+- **The capture RPCs are unaffected:** SECURITY DEFINER functions and triggers run as the table
+  owner.
+- **The worker's output uploads still work:** the `drawer-assets` and `lidar_scans` storage
+  policies never read `public.drawer`.
+- **Proof:** only the INSERT tests exercise these policies, test 28 (`order`) and test 32
+  (`drawer`). SELECT, UPDATE and DELETE on `order` (tests 27, 29, 30) were already refused by the
+  existing policies.
+- These are new RLS on core tables, which is a human gate (CLAUDE.md rule 4).
 
 ```sql
 -- TARGET SHAPE — not applied. Widening a CHECK is expand-only.
@@ -648,6 +698,20 @@ for step:
 **Recommendation: (b) for the pilot.** It needs the smallest new surface and reuses an
 already-reviewed path. Move to (a) if mis-attributed events matter in analytics.
 
+**Conditional on Q4(b) standing:** as built in T2-L1 (#39, `20261023120000` l.518-523),
+`complete_capture` makes the legacy write only for the drawer's **current** capture:
+`update drawer set status = 'created_by_user' where id = … and stage = 'backlog' and
+current_capture_id = <this capture>`. A superseded capture that finishes late therefore never
+advances the stage.
+
+- **Known no-op edge:** `drawer_stage_bridge` fires only when `status` actually changes
+  (`20260727100000_status_backbone.sql` l.471). A `backlog` drawer whose legacy status is already
+  `created_by_user` stays in `backlog` after a successful capture, and staff advance it by hand.
+  Pre-created drawers normally carry `backlogged_by_admin`, so this is rare. Test 106 pins the
+  behaviour.
+- If Sam declines Q4(b), this paragraph is removed and a follow-up migration drops that write
+  (l.518-523).
+
 If Sam declines both, the drawer stays in `backlog` until staff advance it, and nothing else in
 this contract changes.
 
@@ -661,15 +725,15 @@ revoked from `authenticated`, except `_can_capture_drawer_path`, which storage R
 
 | RPC | Caller (checked inside) | Purpose | Idempotency |
 |---|---|---|---|
-| `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → table(capture_id, drawer_id, source, status, created_at)` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Verifies the frames are in storage. Device output URLs must live under the drawer's `drawer-assets` / `lidar_scans` prefixes. Supersedes a queued predecessor. Returns the **narrow** client shape, never the full row (no `error` or `timings`). | Replaying the same id returns the same row. |
+| `create_capture(p_capture_id, p_drawer_id, p_frame_count, p_source default 'worker', p_ortho_url default null, p_model_url default null, p_timings default null) → table(capture_id, drawer_id, source, status, created_at)` | `_can_capture_drawer` (owner, customer of the drawer, or staff) | T1/T2. Rejects a null or unknown `p_source` (`P0001`). Verifies the frames are in storage. Device output URLs must live under the drawer's `drawer-assets` / `lidar_scans` prefixes. Supersedes a queued predecessor. Returns the **narrow** client shape, never the full row (no `error` or `timings`). | Replaying the same id returns the same row. |
 | `claim_next_capture(p_worker_id) → table(capture_id, drawer_id, order_id, attempt, frame_count, frames_prefix, queued_at)` | `is_worker()` | Runs the reaper (§7.2), then T3. Returns 0 or 1 rows. `FOR UPDATE SKIP LOCKED`. | At most one claim per call. Two workers never get the same row. |
-| `worker_heartbeat(p_worker_id, p_capture_id default null, p_attempt default null, p_version default null) → boolean` | `is_worker()` | Records liveness; bumps `capture.heartbeat_at` for a live claim. | Pure upsert. `false` means the claim is lost, so the worker must abort. |
+| `worker_heartbeat(p_worker_id, p_capture_id default null, p_attempt default null, p_version default null) → boolean` | `is_worker()` | Records liveness. Bumps `capture.heartbeat_at` for a live claim **first**, then upserts `capture_worker` (§8 lock order). | Safe to repeat. `false` means the claim is lost, the attempt is wrong, or the capture is unknown or deleted, so the worker must abort. Such a beat still records liveness, with `current_capture_id = null` (§3.3), and never raises an FK error. |
 | `complete_capture(p_capture_id, p_worker_id, p_attempt, p_ortho_url, p_model_url default null, p_timings default null) → capture` | `is_worker()` with the live claim | T4 plus the drawer writes. | Replaying the same attempt and `ortho_url` is a no-op. A stale fence raises `40001`. |
 | `fail_capture(p_capture_id, p_worker_id, p_attempt, p_error_code, p_error default null, p_timings default null) → capture` | `is_worker()` with the live claim | T5/T6. The server decides retryability from the code (§7.1). | A stale fence is a no-op that returns the current row. |
-| `requeue_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T11. Allowed only for the drawer's current capture, with `source='worker'`. Sets `attempt_limit = attempt_count + 3`. | No-op if already `queued`. |
-| `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10. `error = 'cancelled: <reason>'`. | No-op if already `failed`. |
+| `requeue_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T11. Allowed only for the drawer's current capture, with `source='worker'`, from `failed` or `processing`. Sets `attempt_limit = attempt_count + 3` and appends a `requeued` attempt entry (§3.2). **As built:** a non-empty `p_reason` is required. Errors: not staff `42501`; empty reason, `device` source, `done` (terminal: rescan instead) or not the current capture → `P0001`; unknown id `P0002`. | No-op if already `queued`. |
+| `cancel_capture(p_capture_id, p_reason) → capture` | `is_staff()` | T10, from `queued` or `processing`. `error = 'cancelled: <reason>'`; appends a `cancelled` entry only if it was `processing` (§3.2). **As built:** a non-empty `p_reason` is required. It does **not** require the current capture. Errors: not staff `42501`; empty reason or `done` → `P0001`; unknown id `P0002`. | No-op if already `failed`. |
 | `get_my_capture_status() → table(drawer_id, display_state, capture_updated_at)` | any signed-in user | Customer view, with the same visibility as `get_my_drawers()`. `display_state` follows §5.2 rule 4: `null` when `photo_url is not null`, `'processing'` for `queued`/`processing`, `'rescan_needed'` for `rescan_needed`, otherwise `null`. Only rows with a non-null `display_state` are returned. No error text, no timings. | Read-only. |
-| `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. | Read-only. |
+| `get_capture_queue(p_include_done default false) → jsonb` | `is_staff()` | Admin view: `{workers:[{worker_id, version, last_seen_at, online, current_capture_id}], captures:[{capture_id, drawer_id, nickname, order_id, project_name, customer_name, status, source, attempt_count, attempt_limit, error, worker_id, claimed_at, heartbeat_at, created_at, finished_at, is_current, frame_count, timings}]}`. `online` means `last_seen_at > now() − 3 min`. **As built:** `captures` is capped at the newest 500 rows, ordered by `created_at desc`; `customer_name` is `coalesce(order.customer_name, customer.name)`. | Read-only. |
 | `_can_capture_drawer(uuid)`, `_can_capture_drawer_path(text)`, `_sync_drawer_capture_state(uuid)`, `_reap_stale_captures(text)`; `_capture_advance_stage(uuid, uuid)` only if §5.3 option (a) is chosen | internal | Helpers. | `_capture_advance_stage`: `status_event` idempotency key |
 
 Why `get_my_capture_status()` is a new RPC: adding a column to `get_my_drawers()` would change its
@@ -876,13 +940,25 @@ create or replace function public.worker_heartbeat(
   p_version    text default null
 ) returns boolean
 language plpgsql security definer set search_path = public as $$
+-- As built: 20261023130000_worker_heartbeat_lock_order.sql (capture first, then capture_worker; §8).
+declare v_live boolean := false;
 begin
   if not public.is_worker() then
     raise exception 'worker role required' using errcode = '42501';
   end if;
 
+  -- capture first (lock order, section 8): bump the live claim only.
+  if p_capture_id is not null then
+    update public.capture
+       set heartbeat_at = now(), updated_at = now()
+     where id = p_capture_id and status = 'processing'
+       and worker_id = p_worker_id and attempt_count = p_attempt;
+    v_live := found;
+  end if;
+
+  -- then capture_worker: liveness, pointing at the capture only while the claim is live.
   insert into public.capture_worker (worker_id, auth_user_id, version, current_capture_id, last_seen_at)
-  values (p_worker_id, auth.uid(), p_version, p_capture_id, now())
+  values (p_worker_id, auth.uid(), p_version, case when v_live then p_capture_id end, now())
   on conflict (worker_id) do update
      set auth_user_id       = excluded.auth_user_id,
          version            = coalesce(excluded.version, public.capture_worker.version),
@@ -892,12 +968,7 @@ begin
   if p_capture_id is null then
     return true;                                             -- idle beat
   end if;
-
-  update public.capture
-     set heartbeat_at = now(), updated_at = now()
-   where id = p_capture_id and status = 'processing'
-     and worker_id = p_worker_id and attempt_count = p_attempt;
-  return found;                                              -- false => claim lost: abort, discard outputs
+  return v_live;                                             -- false => claim lost: abort, discard outputs
 end $$;
 
 create or replace function public.complete_capture(
@@ -1164,7 +1235,7 @@ of scope here. The transition is the hook to attach it to (§11).
 | Frame upload | Names are immutable, uploads use `upsert:false`, and `409 Duplicate` means done. No client role can update or delete. |
 | `create_capture` | The client supplies `capture_id`, and a replay returns the same row. Reusing an id for another drawer or user gives `23505`. Two concurrent first calls race on the PK: the loser gets `23505` and its retry returns the row. |
 | `claim_next_capture` | `FOR UPDATE SKIP LOCKED` hands each queued row to exactly one caller. A worker that crashes after claiming loses that attempt (reaped on its next claim). The row is never processed twice concurrently. |
-| `worker_heartbeat` | Upsert. The boolean result is the worker's only "keep going" signal. |
+| `worker_heartbeat` | Safe to repeat: it bumps a live claim and upserts liveness. The boolean result is the worker's only "keep going" signal. A beat that matches no live claim returns `false` and changes no `capture` row. |
 | `complete_capture` | Fenced by `(worker_id, attempt_count)`. A replay of the same attempt and `ortho_url` returns the row. A stale fence raises `40001`, and the worker discards its result; its timestamped uploads are harmless orphans. |
 | `fail_capture` | A stale fence is a no-op. |
 | Drawer writes | Fill-if-empty, plus the `current_capture_id` pointer, means a replay or late finisher cannot double-apply or clobber anything. |
@@ -1184,12 +1255,27 @@ even if both claims carry the same `worker_id`.
 - `create_capture` follows the same order. It reads `current_capture_id` unlocked, locks that
   predecessor capture, then locks the drawer, and re-checks the pointer. It retries up to 3 times,
   then raises `40001` (§6.1).
-- The worker's heartbeat touches only `capture`.
 - tidyCAM's and tidyCAD's own drawer updates lock only the drawer.
 
-With one global order, a `40P01` deadlock should not occur between capture RPCs. As a belt and
-braces rule, every client treats `40001` and `40P01` from any capture RPC as **retryable**. A
-retry with the same arguments is safe by the rows above.
+**As built (T2-L1, #39): the per-RPC order, including `capture_worker`.**
+
+| RPC | Lock order |
+|---|---|
+| `worker_heartbeat` | `capture` → `capture_worker` (`20261023130000`; the first version had them reversed and could deadlock with complete/fail) |
+| `complete_capture` / `fail_capture` | `capture` → `drawer` → `capture_worker` |
+| `claim_next_capture` | `capture_worker` → `capture` (`SKIP LOCKED` only, so it never waits) → `drawer` |
+
+The invariant that holds: **every `capture` lock that can wait is taken before `drawer` and
+`capture_worker`.** That removes the heartbeat-vs-complete deadlock.
+
+- **One theoretical cycle remains, and it is accepted.** `claim_next_capture` takes
+  `capture_worker` then `drawer`, while complete/fail take `drawer` then `capture_worker`.
+- A cycle needs one worker to claim and complete at the same moment on a shared drawer. The
+  worker's main loop is serial, so it does not do that, and the rule below covers it anyway.
+- A possible later fix is to update `capture_worker` before the drawer write in complete/fail.
+
+As a belt and braces rule, every client treats `40001` and `40P01` from any capture RPC as
+**retryable**. A retry with the same arguments is safe by the rows above.
 
 ---
 
@@ -1215,6 +1301,12 @@ It does **not** call `get_my_drawers()` and has no capture code.
     phase (§4.1).
   - RPC `create_capture`.
   - Never `capture` rows or `drawer.capture_state` directly; the guard trigger rejects that.
+  - **Drawer writes name their fields.** Never write back a full drawer row read earlier (an
+    upsert of the whole object). If a capture RPC moved `capture_state` or `current_capture_id` in
+    between, the stale values trip the guard trigger with `42501`.
+  - **Embeds need an FK hint.** `drawer` and `capture` have two FK paths (`capture.drawer_id` and
+    `drawer.current_capture_id`). A bare `drawer?select=*,capture(*)` fails with `PGRST201`; name
+    the FK, e.g. `capture!capture_drawer_id_fkey(...)`.
 - **Reads (new):**
   - Its own `capture` rows. RLS is `created_by = auth.uid()`, and the grant is column-level, so
     columns must be named; `select=*` is refused (§3.1).
@@ -1338,6 +1430,9 @@ It does **not** call `get_my_drawers()` and has no capture code.
   - **Interim:** until that ships, staff simply don't Select drawers without a photo. The DB is
     unaffected either way; this is a UI guard. `get_work_queue()` is not changed by this
     contract.
+- **Drawer writes name their fields** (as in §9.1). tidyCAD's updates already send only named
+  fields. Keep it that way: a stale full-row write-back trips the `capture_state` guard (`42501`).
+  Any drawer→capture embed needs the FK hint (`PGRST201` otherwise).
 
 ### 9.5 Public pages (`docs/` `/q/`, `/approve/`)
 
@@ -1364,11 +1459,21 @@ There is one additive migration, written by the migration lane per `migrations/R
    - **Option (a):** a body-only `create or replace` of `record_status_event` adding the `worker`
      actor role, plus the internal `_capture_advance_stage()` and its call from `complete_capture`.
 
+**As built (T2-L1, #39):** two migrations, both applied to dev and byte-verified; prod is Sam's.
+
+- **`20261023120000_remote_capture_queue.sql`** covers steps 1–6, with option (b) for step 6. It
+  also adds a step between 3 and 4: the three RESTRICTIVE `*_deny_worker` policies on `drawer`,
+  `order` and `customer` (§3.5).
+- **`20261023130000_worker_heartbeat_lock_order.sql`** is a body-only `create or replace` of
+  `worker_heartbeat`, with the same signature and grants (§6.1, §8).
+
 What the migration leaves alone:
 
 - No existing column is renamed or retyped.
 - No existing RPC signature or return type changes.
-- No existing policy changes.
+- No existing policy is altered or dropped. **Three are added:** the RESTRICTIVE
+  `drawer_deny_worker`, `order_deny_worker` and `customer_deny_worker` (§3.5). They narrow access
+  for `worker` users only.
 - No backfill is needed: `capture_state is null` means "never remotely captured", which is true
   for every existing drawer.
 - **The existing on-device-only path keeps working with zero changes.** That covers tidyCAM's
@@ -1383,6 +1488,9 @@ role is auth work, and auth is high-risk. Agents do not do it on either environm
    the worker to that customer on creation and on every sign-in. Use a dedicated address, such as
    `worker+<env>@thetidytool.com`, and check
    `select 1 from customer where lower(email) = lower('<addr>')` first.
+   **Grounding note (T2-L1):** dev has **no** `link_customer_on_auth` trigger on `auth.users`, even
+   though `20260704000000` l.114–141 creates it. Check prod for the trigger before creating the
+   worker user there. Whether the trigger exists changes which risk applies.
 2. Inserts `user_roles (user_id, 'worker')`. It must be the only role row for that user: never
    staff, admin or user.
 3. Does this only **after** the §9.3 EmployeesList change has shipped. Until then the worker would
@@ -1391,12 +1499,25 @@ role is auth work, and auth is high-risk. Agents do not do it on either environm
 
 **Rollback** (before any customer captures exist), in this order:
 
-1. Drop the RPCs, the guard trigger, the two drawer columns, `capture_worker`, `capture`, and the
-   storage policies.
+1. Drop the RPCs, the guard trigger, the two drawer columns, `capture_worker`, `capture`, the
+   storage policies, and the three `*_deny_worker` policies on `drawer`, `order` and `customer`.
+   Drop the policies before the role check is restored, because they call `is_worker()`.
 2. Delete the empty `scan_frames` bucket.
 3. Restore the old role check.
 
 Once customer frames exist, deleting them is "deleting data", which is high-risk and Sam's call.
+
+**Known gap: admin delete (T2-L1 finding, not a decision).** `admin_delete_drawer` and
+`admin_delete_order` (`20260910175336_admin_cleanup_controls.sql`) cascade-delete the drawer's
+`capture` rows through `capture.drawer_id … on delete cascade`.
+
+- **No audit:** `_admin_audit` snapshots drawers, `drawer_event` and `status_event`, but **not**
+  the cascaded captures. Their `error` and `timings` are lost.
+- **Orphans:** the `scan_frames/<drawer_id>/…` objects are left in the bucket.
+- **Not exercised end to end:** `20260910175336` is not applied on dev. The T2-L1 delete check had
+  to disable `status_event_no_delete` inside its rolled-back transaction. Re-run it on a
+  `with_data` branch before relying on it.
+- **Open:** whether to accept this or extend `_admin_audit` and add frame cleanup (§11).
 
 **Dev verification the migration lane must show** (SQL against dev; record in its `verification.md`):
 
@@ -1437,6 +1558,8 @@ Engineer review lens.
 
 - **Data lifecycle:** frame retention and deletion (§12 Q8), and cleanup of orphaned output
   objects from lost attempts.
+- **Admin delete of captures:** auditing cascaded `capture` rows and removing `scan_frames`
+  objects when a drawer or order is admin-deleted. This is the known gap in §10.
 - **Notifications:** customer or Discord notifications on `rescan_needed` (the hook is the
   transition).
 - **Adopting a newer capture:** the "adopt / promote" action for a rescan of a drawer that already
