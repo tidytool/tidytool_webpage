@@ -135,7 +135,7 @@ One row is one attempt by a customer or staff member to scan one drawer. A resca
 | `source` | `text` ∈ `device`, `worker` | ✓ | **Where reconstruction runs.** `worker` means queued for the Mac mini. `device` means reconstructed on the phone (the existing LiDAR path) and recorded for history only: the row is created already `done` and is never claimed. **Decision (proposed)** on the meaning. |
 | `frame_count` | `int not null` | ✓ | Number of image frames (`frames/frame_NNNN.{jpg,heic}`) uploaded, excluding sidecars. For `worker` it must be between 20 and 400 (**Decision (proposed)**). `create_capture` checks that this many frames actually exist in storage. |
 | `status` | `text` ∈ `queued`, `processing`, `done`, `failed` | ✓ | See the state machine in §5. |
-| `error` | `text` | ✓ | Null unless the capture is `failed` or a failure was retried. Format: `<error_code>: <detail>`, with `error_code` taken from §7.1. **Staff-facing only**; customers never see it. |
+| `error` | `text` | ✓ | Null unless the capture is `failed` or a failure was retried. Format: `<error_code>: <detail>`, with `error_code` taken from §7.1. **Staff-facing only.** Enforced by a column-level grant (below): no client role can select `error`, `timings`, `worker_id`, `claimed_at`, `heartbeat_at` or the attempt columns. Staff read them through `get_capture_queue()`. |
 | `ortho_url` | `text` | ✓ | Public URL of the ortho PNG in `drawer-assets` (§4.3). Required when `done`. |
 | `model_url` | `text` | ✓ | Public URL of the USDZ in `lidar_scans` (§4.3). Nullable, because an ortho-only success is still `done`. |
 | `worker_id` | `text` | ✓ | Stable worker name of the **current** claimant, e.g. `mini-1`. Null while `queued`; the history lives in `timings.attempts`. |
@@ -184,14 +184,21 @@ create index capture_drawer_idx     on public.capture (drawer_id, created_at des
 
 alter table public.capture enable row level security;
 revoke all on table public.capture from public, anon, authenticated;
-grant select on table public.capture to authenticated;
--- Read: the creator (tidyCAM shows its own uploads) and staff. Customers who did not create the
--- capture read status through get_my_capture_status() (§6) — _customer_can_see_drawer() is not
+-- Column-level grant: the client-facing columns only. error, timings, worker_id, claimed_at,
+-- heartbeat_at, attempt_count, attempt_limit stay unreadable to every client role (staff included —
+-- staff read them through the SECURITY DEFINER get_capture_queue()). Clients must name columns:
+-- PostgREST `select=*` on capture fails with 42501 by design.
+grant select (id, drawer_id, created_by, source, frame_count, status,
+              ortho_url, model_url, created_at, updated_at, finished_at)
+  on table public.capture to authenticated;
+-- Row filter: the creator (tidyCAM shows its own uploads) and staff. Customers who did not create
+-- the capture read status through get_my_capture_status() (§6) — _customer_can_see_drawer() is not
 -- granted to authenticated, so it cannot appear in a policy.
 create policy capture_select on public.capture
   for select to authenticated
   using (created_by = auth.uid() or public.is_staff());
--- No INSERT / UPDATE / DELETE policies: every write goes through the §6 RPCs.
+-- No INSERT / UPDATE / DELETE policies: every write goes through the §6 RPCs. Client-facing RPCs
+-- return the same narrowed column set, never the full row (§6).
 ```
 
 ### 3.2 `capture.timings` shape
@@ -288,6 +295,16 @@ begin
   if coalesce(current_setting('tidytool.capture_write', true), '') = 'on' then
     return new;
   end if;
+  -- FK action: deleting a capture row directly (retention purge, dashboard cleanup) fires the
+  -- `on delete set null` RI update on drawer.current_capture_id from inside a trigger
+  -- (pg_trigger_depth() > 1). Allow exactly that — pointer nulled, nothing else touched — and
+  -- clear capture_state with it: a drawer with no current capture has no capture state.
+  if tg_op = 'UPDATE' and pg_trigger_depth() > 1
+     and old.current_capture_id is not null and new.current_capture_id is null
+     and new.capture_state is not distinct from old.capture_state then
+    new.capture_state := null;
+    return new;
+  end if;
   if tg_op = 'INSERT' then
     if new.capture_state is not null or new.current_capture_id is not null then
       raise exception 'drawer.capture_state is RPC-managed' using errcode = '42501';
@@ -306,6 +323,15 @@ create trigger drawer_capture_state_guard
 
 tidyCAM's existing drawer insert and update never send these columns, so the guard never fires on
 its path. The same is true of tidyCAD's update and insert.
+
+The FK-action exception has two limits:
+
+- It only ever *clears* the pointer. It cannot set one, and it cannot set a state.
+- The two FKs form a cycle: `capture.drawer_id → drawer` cascades, while
+  `drawer.current_capture_id → capture` sets null.
+
+The migration lane must therefore prove two deletes on dev: deleting a drawer that has captures
+(the admin bulk-delete path), and deleting a capture row directly. Both are in the §10 checklist.
 
 ### 3.5 The worker identity: `user_roles.role = 'worker'`, `is_worker()`
 
@@ -369,14 +395,26 @@ scan_frames/
   "has_depth": false }`.
 - The worker treats a mismatch between the manifest and the listing as `insufficient_frames` (§7.1).
 - Objects are **immutable**: no client role has UPDATE or DELETE.
-- Uploads use `upsert:false`. A `409 Duplicate` on retry means the object is already uploaded and
-  counts as success, so upload is idempotent.
+- **The prefix is open for writing only before `create_capture`.** The insert policy (§4.2) rejects
+  an object in either of two cases:
+  - its `<capture_id>` already has a `capture` row;
+  - any object under the same `<drawer_id>/<capture_id>/` prefix is owned by someone else, so the
+    first uploader owns the prefix.
+
+  Consequences:
+  - Another member of the same organization cannot inject frames into a capture.
+  - Nobody can add frames after the capture is queued.
+- **Uploads use `upsert:false`.** A `409 Duplicate` *before* `create_capture` means the object is
+  already uploaded, and counts as success. That makes the upload phase idempotent. *After*
+  `create_capture`, uploads under that prefix are refused, whether the response is 403/RLS or 409.
+  tidyCAM must finish every upload, the manifest included, before calling `create_capture`. A
+  refused upload for an already-created capture is a client bug, not a retry case.
 
 ### 4.2 Who can read and write each prefix
 
 | Prefix | tidyCAM user (drawer owner, customer of the drawer, or staff) | Worker (`is_worker()`) | Staff / admin (portal) | anon |
 |---|---|---|---|---|
-| `scan_frames/<drawer_id>/<capture_id>/…` | **Insert only**, as `owner = auth.uid()`, and only if `_can_capture_drawer(drawer_id)` (§6.1) holds. Select only its own objects, to resume an upload. | Select (download) all | Select all (signed-URL preview, §4.4) | None |
+| `scan_frames/<drawer_id>/<capture_id>/…` | **Insert only**, as `owner = auth.uid()`. Allowed only when all three hold: `_can_capture_drawer(drawer_id)` (§6.1); no `capture` row exists yet for `capture_id`; the caller owns every object already under that prefix. Select only its own objects, to resume an upload. | Select (download) all | Select all (signed-URL preview, §4.4) | None |
 | `drawer-assets/<drawer_id>/orders/<order_id\|unassigned>/photo_<ms>.png` | Unchanged (today's policies) | Insert as owner (already allowed by `drawer_assets_insert`) | Unchanged | Read through the public URL (unchanged) |
 | `lidar_scans/<drawer_id>/orders/<order_id\|unassigned>/model_<ms>.usdz` | Unchanged | Insert as owner (already allowed by "Allow authenticated uploads to lidar_scans") | Unchanged | Read through the public URL (unchanged) |
 
@@ -387,18 +425,27 @@ values ('scan_frames', 'scan_frames', false, 26214400,
         array['image/jpeg','image/heic','application/json'])
 on conflict (id) do nothing;
 
--- Path helper: casts the first path segment safely (Postgres does not guarantee AND
--- short-circuit, so the cast must not live in the policy expression itself).
+-- Path helper: casts the path segments safely (Postgres does not guarantee AND
+-- short-circuit, so the casts must not live in the policy expression itself).
 create or replace function public._can_capture_drawer_path(p_name text)
 returns boolean language plpgsql stable security definer set search_path = public as $$
-declare v_drawer uuid;
+declare v_drawer uuid; v_capture uuid; v_prefix text;
 begin
   begin
-    v_drawer := split_part(p_name, '/', 1)::uuid;
+    v_drawer  := split_part(p_name, '/', 1)::uuid;
+    v_capture := split_part(p_name, '/', 2)::uuid;
   exception when invalid_text_representation then
     return false;
   end;
-  return public._can_capture_drawer(v_drawer);
+  v_prefix := v_drawer::text || '/' || v_capture::text || '/';
+  return public._can_capture_drawer(v_drawer)
+     -- closed once queued: no frames can be added after create_capture
+     and not exists (select 1 from public.capture c where c.id = v_capture)
+     -- first uploader owns the prefix: nobody else can inject frames into it
+     and not exists (select 1 from storage.objects o
+                      where o.bucket_id = 'scan_frames'
+                        and left(o.name, length(v_prefix)) = v_prefix
+                        and o.owner is distinct from auth.uid());
 end $$;
 revoke all on function public._can_capture_drawer_path(text) from public, anon;
 grant execute on function public._can_capture_drawer_path(text) to authenticated;   -- needed inside the policy
