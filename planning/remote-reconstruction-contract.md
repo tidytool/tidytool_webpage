@@ -91,7 +91,9 @@ Storage bucket detail (`20260703220000_baseline_storage_policies.sql`;
 - The broad legacy `drawer-assets` policies still exist.
 - Neither bucket is created in a migration. Both are public.
 
-How the sibling repos touch these today (read-only survey of `tidyCAM` and `tidyCAD`, 2026-10-22).
+How the sibling repos touch these today. This is a read-only survey of the local checkouts on
+2026-10-22: tidyCAM on `feature/release-1.7.1`, tidyCAD on `main`. §9 re-cites against `origin/main`
+wherever it relies on one of these facts.
 
 **tidyCAM** (Flutter plus native Swift):
 
