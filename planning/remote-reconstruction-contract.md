@@ -1034,3 +1034,243 @@ of scope here. The transition is the hook to attach it to (§11).
 requeue raises `attempt_limit` instead of resetting the count. A zombie worker still holding
 attempt *n* therefore cannot complete a capture that has since been reclaimed as attempt *n+1*,
 even if both claims carry the same `worker_id`.
+
+---
+
+## 9. Consumers
+
+### 9.1 tidyCAM iOS app — uploads frames, creates the capture
+
+- **Role.** `authenticated`, signed in with the publishable key as today. The user may be a
+  customer (remote pilot) or staff.
+- **Writes:**
+  - Storage `scan_frames/<drawer_id>/<capture_id>/…`: insert only, with `upsert:false`, and
+    `409` treated as success.
+  - RPC `create_capture`.
+  - Nothing else new.
+  - It never writes `capture` rows or `drawer.capture_state` directly, because the guard trigger
+    rejects such writes.
+- **Reads:**
+  - Its own `capture` rows (RLS `created_by = auth.uid()`).
+  - `drawer.capture_state` from its existing drawer `select()` (the new column appears in the
+    payload). Model decoding must tolerate unknown keys.
+  - A customer who did not create the drawer reads drawers via `get_my_drawers()` and status via
+    `get_my_capture_status()`, because drawer RLS does not let them select it directly.
+- **Sequence:**
+  1. The drawer row exists (tidyCAM creates it as today, with a client-generated `drawer.id` and
+     `photo_url` null, or staff pre-created it).
+  2. Generate `capture_id` (uuid v4).
+  3. Upload frames, then sidecars, then `manifest.json` last.
+  4. Call `create_capture(capture_id, drawer_id, frame_count, 'worker', p_timings => {capture_s, upload_s, bytes, device, app_version})`.
+  5. Show status from `capture_state`. Realtime is optional; `drawer` is already published.
+- **For a remote capture, leave `photo_url` and `point_cloud_url` empty.** The worker fills them.
+  The on-device LiDAR path is **unchanged**. Optionally, it may record history with
+  `create_capture(source => 'device', p_ortho_url, p_model_url)` (§12 Q2).
+- **On "Rescan needed",** offer a rescan of the same drawer. That means a new `capture_id` and a
+  new upload; the old capture is never reused.
+
+### 9.2 Reconstruction worker (Mac mini) — claims, heartbeats, writes results
+
+- **Role:** a dedicated auth user with `user_roles.role = 'worker'` (§3.5), using the publishable
+  key. Credentials live in the macOS keychain, never in a repo or `.env` that is committed. One
+  user per environment (dev `gfkrebuioszsxanjdnsx`, prod `tkrrvpoupekrjqditupi`).
+- **Reads:**
+  - the `claim_next_capture` result;
+  - `scan_frames` objects under `frames_prefix` (authenticated `download`, and `list` for
+    validation).
+  - It reads **no tables**.
+- **Writes:**
+  - outputs to `drawer-assets` and `lidar_scans` (§4.3: timestamped names, `upsert:false`, public
+    URL);
+  - `worker_heartbeat`, `complete_capture` and `fail_capture`.
+- **Loop:**
+  1. Claim. If the queue is empty, sleep 10 s.
+  2. Fetch the manifest and validate it against the listing. On a mismatch, report
+     `fail_capture('insufficient_frames')`.
+  3. Start a 30 s heartbeat. If a beat returns `false`, abort immediately and discard.
+  4. Reconstruct. The existing `tidycam-worker` CLI already emits `model.usdz`, `ortho.png` and
+     `timings.json`; that JSON becomes `p_timings`.
+  5. Upload the outputs.
+  6. Call `complete_capture`. A `40001` response means log and drop.
+  7. On any exception, call `fail_capture` with the closest §7.1 code. `worker_error` is the
+     catch-all.
+- **Must:**
+  - keep ortho parity with on-device (square PNG, 2048 px default, same framing);
+  - give every process a unique `worker_id`;
+  - send idle heartbeats;
+  - clean local scratch per capture.
+
+### 9.3 Portal — customer status, admin queue
+
+- **Role:** `authenticated` for customers; staff and admin via `is_staff()`.
+- **Customer** (`src/app/page.tsx`): call `get_my_capture_status()` in the same `Promise.all` as
+  `get_my_drawers()`. Render a `.chip` on each drawer card:
+  - "Processing scan" for `queued` and `processing`;
+  - **"Rescan needed"** for `rescan_needed`, plus the §7.3 sub-copy.
+
+  `get_my_drawers()`, `get_order_tracker()` and the 7-step tracker are untouched.
+- **Admin:** a capture queue view, either a new admin route or a section of `/admin/queue`. It is
+  fed by `get_capture_queue()` and shows worker online/offline, the queue, processing (with
+  heartbeat age) and failures with `error`.
+  - **Requeue** and **Cancel** call `requeue_capture` and `cancel_capture` from server actions,
+    using the existing `useTransition` + `router.refresh()` pattern.
+  - An optional frame preview mints `createSignedUrl` server-side per render, with no URL
+    persisted or cached (§4.4).
+- **Roles UI:** the admin roles and employees screens list `user_roles` and must tolerate the new
+  `worker` role. Display it read-only; there is no grant UI for it. The worker user is created by
+  Sam.
+
+### 9.4 tidyCAD — consumes the ortho and model output
+
+- **No change required.** tidyCAD reads `drawer.photo_url` (the ortho) and
+  `drawer.point_cloud_url` (USDZ) exactly as it does today. A completed remote capture is
+  indistinguishable from an on-device scan.
+- **Corner coordinates.** The worker writes **no** corners, calibration or dimensions.
+  - Corners picked later on the worker's ortho are stored as usual. `correction.corner_points` are
+    **ortho pixels**; `reference_corners` and `boundary_corners` are **normalized 0–1**, each
+    relative to *that* ortho image.
+  - They stay valid because `photo_url` is never replaced once set (§5.2 rule 2).
+  - Ortho parity (square PNG, same framing as on-device) keeps tidyCAD's "normalized × loaded image
+    size" scaling correct.
+  - Do not mix the two coordinate spaces (CLAUDE.md gotcha).
+- **Known caveat, pre-existing:** the model cache is keyed on `drawer_id`. This is harmless under
+  never-overwrite, but it must be fixed (key on the object path) before any "adopt a newer capture"
+  feature (§12 Q6).
+- **Optional:** tidyCAD's work queue could show `capture_state`, but `get_work_queue()` is not
+  changed by this contract.
+
+### 9.5 Public pages (`docs/` `/q/`, `/approve/`)
+
+Untouched. They keep reading `photo_url` through their existing anon RPCs. A drawer whose remote
+capture has not finished simply has no photo yet, which is today's behaviour for a drawer without a
+photo.
+
+---
+
+## 10. Rollout — expand only
+
+There is one additive migration, written by the migration lane per `migrations/README.md`
+(header with what/why/rollback/verify; dev first via `db_apply.py --env dev`; prod by Sam):
+
+1. Widen the `user_roles_role_check` constraint to accept `'worker'`, and add `is_worker()`.
+2. Create `capture` and `capture_worker`, with their indexes and deny-all RLS (plus the
+   `capture_select` policy).
+3. Add `drawer.capture_state` and `drawer.current_capture_id`. Both are nullable with no default,
+   so this is a metadata-only change. Add the guard trigger.
+4. Create the `scan_frames` bucket, the two storage policies and `_can_capture_drawer_path`.
+5. Add the RPCs and grants (§6).
+6. *Only if Sam accepts §5.3:* a body-only `create or replace` of `record_status_event` adding the
+   `worker` actor role, plus the `backlog → scanned` step in `complete_capture`.
+
+What the migration leaves alone:
+
+- No existing column is renamed or retyped.
+- No existing RPC signature or return type changes.
+- No existing policy changes.
+- No backfill is needed: `capture_state is null` means "never remotely captured", which is true
+  for every existing drawer.
+- tidyCAM and tidyCAD keep working with zero changes.
+
+Out-of-migration setup (Sam, per environment): create the worker auth user and insert its
+`user_roles (user_id, 'worker')` row. On dev it can be done by an agent via the dev SQL editor; on
+prod it is Sam's.
+
+**Rollback** (before any customer captures exist), in this order:
+
+1. Drop the RPCs, the guard trigger, the two drawer columns, `capture_worker`, `capture`, and the
+   storage policies.
+2. Delete the empty `scan_frames` bucket.
+3. Restore the old role check.
+
+Once customer frames exist, deleting them is "deleting data", which is high-risk and Sam's call.
+
+**Dev verification the migration lane must show** (SQL against dev; record in its `verification.md`):
+
+- [ ] `create_capture` by a user who cannot see the drawer → `42501`; by its owner without frames
+      → `P0001`; with frames → `queued`, and `drawer.capture_state = 'queued'`.
+- [ ] `update drawer set capture_state = 'ready'` as owner or staff → `42501`. tidyCAM's normal
+      drawer update payload still succeeds.
+- [ ] Two sessions calling `claim_next_capture` concurrently get different rows (or one empty).
+- [ ] Back-dating `heartbeat_at` by 4 min makes the next claim requeue the row and append an
+      `attempts[]` entry. The third loss → `failed`, `retries_exhausted`, `rescan_needed`.
+- [ ] `complete_capture` with an old attempt → `40001`. A replay of the live attempt returns the
+      same row. A pre-set `photo_url` is not overwritten.
+- [ ] A superseded queued capture → `failed`/`superseded`. A late-finishing superseded processing
+      capture leaves the drawer alone.
+- [ ] `get_my_capture_status()` returns only the caller's drawers. anon cannot read `scan_frames`.
+      A customer cannot read another user's frames. The worker can read all.
+- [ ] Supabase security advisors show no new findings (all functions pin `search_path`).
+
+Any change to names, shapes or semantics here is a **contract change**: amend this document first.
+It matches `planning/*contract*.md` in `.claude/team.json` `contract_globs`, so it gets the Systems
+Engineer review lens.
+
+---
+
+## 11. Out of scope (explicitly not decided here)
+
+- **Data lifecycle:** frame retention and deletion (§12 Q8), and cleanup of orphaned output
+  objects from lost attempts.
+- **Notifications:** customer or Discord notifications on `rescan_needed` (the hook is the
+  transition).
+- **Adopting a newer capture:** the "adopt / promote" action for a rescan of a drawer that already
+  has a photo (§12 Q6).
+- **Scale and dimensions:** for remote captures (§12 Q11). The worker writes no
+  `dimensions`, `calibration_matrix` or corners in v1.
+- **Security work tracked elsewhere:** the tidyCAM approval gate (`is_approved()`) and the tightening
+  of the existing `drawer-assets` and `lidar_scans` policies. Both live in
+  `TIDYCAM-launch-coordination.md`.
+- **The worker internals:** the reconstruction algorithm, quality thresholds and Mac mini ops
+  (launchd, keychain, scratch disk).
+- **UI design:** tidyCAM screens and portal layout beyond the contract-level copy in §7.3.
+- **Throughput:** queue priorities and multi-worker scheduling beyond FIFO with SKIP LOCKED.
+
+---
+
+## 12. Open questions for Sam
+
+Each question restates a **Decision (proposed)** above. The recommendation is what the contract
+currently says.
+
+1. **Worker identity** (§3.5): a dedicated `worker`-role auth user, or the service-role key on the
+   Mac mini? *Recommendation: the role user, for its smaller blast radius.*
+2. **`source = device | worker` meaning** (§3.1): this doc reads it as *where reconstruction ran*.
+   Should tidyCAM record on-device scans as `source='device'` captures during the pilot, or leave
+   the on-device path untouched? *Recommendation: optional, not required for the pilot.*
+3. **Infra failures after retries** (§7.1): show the customer "Rescan needed" for
+   `retries_exhausted` too, even though their frames may be fine? The alternative is to keep
+   showing "Processing scan" and alert staff only. *Recommendation: show "Rescan needed"; it is
+   simple and honest, and a staff requeue flips it back.*
+4. **Tracker interplay** (§5.3): advance a pre-created `backlog` drawer to `scanned` on its first
+   successful capture? That needs a body-only change to `record_status_event` for a `worker` actor
+   role. *Recommendation: yes. Pairs with Q10.*
+5. **Who may capture** (§6.1 `_can_capture_drawer`): staff, the drawer's creator, or any customer
+   who can see it (whole organization). Should captures be blocked after design starts
+   (`stage ≥ design_queue`)? *Recommendation: allow any non-cancelled drawer and let staff judge.*
+6. **Rescan of a drawer that already has a photo** (§5.2): v1 never overwrites
+   `photo_url` / `point_cloud_url`. Is a staff "adopt this capture" RPC needed for the pilot? It
+   would also clear stale corners and needs tidyCAD's model-cache fix. *Recommendation: defer until
+   the pilot shows a need.*
+7. **Numbers** (§3.1, §4.1, §7.2): 20–400 frames, 25 MB per object, 30 s heartbeat, 3 min stale,
+   45 min hard cap, 3 attempts. *Recommendation: confirm against `tidycam-worker` timings on the
+   Mac mini before the migration lane freezes them.*
+8. **Frame retention:** keep frames forever, or delete them N days after `done`? Deleting is
+   high-risk and Sam's call. *Recommendation: keep through the pilot, then decide.*
+9. **Bucket creation** (§4.1): in the migration (replayable on branches), or in the dashboard like
+   the existing buckets? *Recommendation: in the migration.*
+10. **Pilot drawer creation:** `drawer_insert_authenticated` lets a user insert drawers only into
+    orders *they* created (`20260628062931_remote_schema.sql`). If Sam creates the Bonnell order,
+    the customer's tidyCAM cannot add drawers to it.
+    - Option (a): staff pre-create the drawers (stage `backlog`). The customer captures into them;
+      `_can_capture_drawer` admits them via the org join. tidyCAM lists them through
+      `get_my_drawers()`.
+    - Option (b): a new create-drawer RPC, which is a separate card.
+
+    *Recommendation: (a).*
+11. **Scale and dimensions for remote captures:** without LiDAR, the worker's ortho has no metric
+    scale, and v1 writes no `dimensions`. Who supplies width and height: the customer in tidyCAM,
+    or staff in tidyCAD from a reference object? This is not part of this contract, but it blocks
+    design for remote drawers.
+12. **Approval gate timing:** when `is_approved()` ships, it becomes a conjunct in
+    `_can_capture_drawer` and in the `scan_frames` insert path. Does the Bonnell pilot run before
+    or after the gate lands?
