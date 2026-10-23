@@ -1,4 +1,5 @@
--- Remote capture queue: RLS, grant and state-machine tests (migrations 20261023120000, 20261023130000).
+-- Remote capture queue: RLS, grant and state-machine tests (migrations 20261023120000, 20261023130000,
+-- 20261023140000).
 -- Contract: planning/remote-reconstruction-contract.md section 10 "Dev verification".
 --
 -- DEV ONLY. Run:  python3 tools/db_test.py portal/supabase/tests/remote_capture_rls_test.sql
@@ -319,10 +320,10 @@ select pg_temp.is('a1 timings: client kept, worker stored, attempts = [lost, don
 select pg_temp.is('dA: photo/model filled from the capture, capture_state ready',
   $q$select capture_state || ' ' || (photo_url like '%/photo_2.png') || ' ' || (point_cloud_url like '%/model_2.usdz')
      from public.drawer where id = '30000000-0000-4000-8000-0000000000a1'$q$, 'ready true true');
-select pg_temp.is('section 5.3 (b): pre-created backlog drawer advanced to scanned via the bridge',
-  $q$select d.stage || ' ' || (select count(*) from public.status_event e where e.drawer_id = d.id
-       and e.field = 'stage' and e.kind = 'bridge' and e.from_status = 'backlog' and e.to_status = 'scanned')
-     from public.drawer d where d.id = '30000000-0000-4000-8000-0000000000a1'$q$, 'scanned 1');
+select pg_temp.is('stage unchanged on complete: backlog drawer stays backlog, legacy status untouched, no stage event away from backlog (Q4 declined)',
+  $q$select d.stage || ' ' || d.status || ' ' || (select count(*) from public.status_event e where e.drawer_id = d.id
+       and e.field = 'stage' and e.to_status is distinct from 'backlog')
+     from public.drawer d where d.id = '30000000-0000-4000-8000-0000000000a1'$q$, 'backlog backlogged_by_admin 0');
 select pg_temp.is('stage/state untouched by capture on dA3 (still active)',
   $q$select state from public.drawer where id = '30000000-0000-4000-8000-0000000000a3'$q$, 'active');
 
@@ -454,9 +455,8 @@ select pg_temp.as_user('00000000-0000-4000-8000-0000000000e1');
 select pg_temp.is('heartbeat on a deleted capture -> false (no FK error)',
   $q$select public.worker_heartbeat('cap-test-w1', '40000000-0000-4000-8000-0000000000a3', 1)::text$q$, 'false');
 
--- Known, accepted edge of section 5.3 (b) (Q4 pending Sam): a backlog drawer whose legacy
--- status is ALREADY 'created_by_user' does not advance, because drawer_stage_bridge fires only
--- on a real status change. Pinned so a behaviour change is deliberate.
+-- Q4 declined (20261023140000): complete_capture never writes stage or legacy status, so a
+-- backlog drawer stays backlog whatever its legacy status ('scanned' = customer confirm).
 select pg_temp.as_user('00000000-0000-4000-8000-0000000000a1');
 select pg_temp.expect('A uploads + creates capture a5 on dA4 (backlog, status already created_by_user)',
   $q$select pg_temp.upload('30000000-0000-4000-8000-0000000000a4', '40000000-0000-4000-8000-0000000000a5'),
@@ -469,8 +469,9 @@ select pg_temp.expect('worker claims + completes a5',
      'https://x.supabase.co/storage/v1/object/public/drawer-assets/30000000-0000-4000-8000-0000000000a4/orders/o/photo_1.png')
      from public.claim_next_capture('cap-test-w1') c$q$);
 select pg_temp.as_admin();
-select pg_temp.is('5.3(b) edge: backlog drawer with status already created_by_user stays backlog',
-  $q$select stage || ' ' || capture_state from public.drawer where id = '30000000-0000-4000-8000-0000000000a4'$q$, 'backlog ready');
+select pg_temp.is('stage unchanged on complete: dA4 stays backlog, status still created_by_user, capture_state ready',
+  $q$select stage || ' ' || status || ' ' || capture_state from public.drawer where id = '30000000-0000-4000-8000-0000000000a4'$q$,
+  'backlog created_by_user ready');
 
 -- status_event is append-only and blocks any drawer delete on its own (prod's admin purge
 -- path lifts that with tidytool.allow_audited_purge, 20260910175336, not yet on dev). Lift it
@@ -494,6 +495,80 @@ select pg_temp.is('worker_heartbeat updates capture before upserting capture_wor
 select pg_temp.is('internal helpers are not executable by authenticated',
   $q$select string_agg(p, ',' order by p) from (values ('public._can_capture_drawer(uuid)'), ('public._sync_drawer_capture_state(uuid)'),
        ('public._reap_stale_captures(text)')) v(p) where has_function_privilege('authenticated', p, 'execute')$q$, null);
+
+-- ---------------------------------------------------------------- service_role worker (Q1a pilot, 20261023140000)
+-- The Mac mini runs the worker on the service-role key: request.jwt.claims role service_role,
+-- db role service_role (BYPASSRLS), no sub => auth.uid() is null.
+create function pg_temp.as_service() returns void language plpgsql as $f$
+begin
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  perform set_config('role', 'service_role', true);
+end $f$;
+
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000a1');
+select pg_temp.expect('A uploads + creates capture a6 on dA (backlog) for the service_role run',
+  $q$select pg_temp.upload('30000000-0000-4000-8000-0000000000a1', '40000000-0000-4000-8000-0000000000a6'),
+     (select status from public.create_capture('40000000-0000-4000-8000-0000000000a6', '30000000-0000-4000-8000-0000000000a1', 20))$q$);
+select pg_temp.as_admin();
+select pg_temp.front('40000000-0000-4000-8000-0000000000a6');
+
+select pg_temp.as_service();
+select pg_temp.is('service_role: is_worker() = true with auth.uid() null',
+  $q$select public.is_worker()::text || ' ' || coalesce(auth.uid()::text, 'null')$q$, 'true null');
+select pg_temp.is('service_role claims a6 as attempt 1',
+  $q$select capture_id::text || ' ' || attempt from public.claim_next_capture('cap-test-sr')$q$,
+  '40000000-0000-4000-8000-0000000000a6 1');
+select pg_temp.is('service_role heartbeat on the live claim -> true',
+  $q$select public.worker_heartbeat('cap-test-sr', '40000000-0000-4000-8000-0000000000a6', 1, '0.0.2-sr')::text$q$, 'true');
+select pg_temp.is('service_role heartbeat with no capture (idle beat) -> true',
+  $q$select public.worker_heartbeat('cap-test-sr2')::text$q$, 'true');
+select pg_temp.is('service_role complete_capture on the live attempt -> done',
+  $q$select (public.complete_capture('40000000-0000-4000-8000-0000000000a6', 'cap-test-sr', 1,
+     'https://x.supabase.co/storage/v1/object/public/drawer-assets/30000000-0000-4000-8000-0000000000a1/orders/o/photo_6.png')).status$q$, 'done');
+select pg_temp.expect('service_role complete_capture with a stale attempt -> 40001 (fence holds)',
+  $q$select public.complete_capture('40000000-0000-4000-8000-0000000000a6', 'cap-test-sr', 2,
+     'https://x.supabase.co/storage/v1/object/public/drawer-assets/30000000-0000-4000-8000-0000000000a1/orders/o/photo_7.png')$q$, '40001');
+select pg_temp.as_admin();
+select pg_temp.is('service_role bookkeeping: capture_worker rows written, keyed by worker_id, auth_user_id null, claim cleared',
+  $q$select string_agg(worker_id || ' ' || coalesce(auth_user_id::text, 'null') || ' ' || coalesce(version, 'null') || ' '
+       || coalesce(current_capture_id::text, 'null'), '; ' order by worker_id)
+     from public.capture_worker where worker_id in ('cap-test-sr', 'cap-test-sr2')$q$,
+  'cap-test-sr null 0.0.2-sr null; cap-test-sr2 null null null');
+select pg_temp.is('service_role bookkeeping: a6 attempt_count/worker_id and one done attempt audited with worker_id',
+  $q$select attempt_count || ' ' || worker_id || ' ' || jsonb_array_length(timings->'attempts') || ' '
+       || (timings->'attempts'->0->>'worker_id') || ' ' || (timings->'attempts'->0->>'outcome')
+       || ' ' || (timings->'attempts'->0 ? 'by')::text
+     from public.capture where id = '40000000-0000-4000-8000-0000000000a6'$q$,
+  '1 cap-test-sr 1 cap-test-sr done false');
+select pg_temp.is('service_role complete: dA stays backlog, keeps its photo (fill-if-empty), capture_state ready',
+  $q$select stage || ' ' || status || ' ' || capture_state || ' ' || (photo_url like '%/photo_2.png')
+     from public.drawer where id = '30000000-0000-4000-8000-0000000000a1'$q$,
+  'backlog backlogged_by_admin ready true');
+select pg_temp.is('service_role has EXECUTE on the four worker RPCs',
+  $q$select bool_and(has_function_privilege('service_role', p, 'execute'))::text
+     from (values ('public.claim_next_capture(text)'), ('public.worker_heartbeat(text,uuid,int,text)'),
+                  ('public.complete_capture(uuid,text,int,text,text,jsonb)'),
+                  ('public.fail_capture(uuid,text,int,text,text,jsonb)')) v(p)$q$, 'true');
+
+-- Negative: is_worker() is still false for every authenticated non-worker caller.
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000a1');
+select pg_temp.expect('authenticated non-worker (A) still cannot claim after the service_role change',
+  $q$select * from public.claim_next_capture('cap-test-a')$q$, '42501');
+select pg_temp.expect('authenticated non-worker (A) still cannot heartbeat',
+  $q$select public.worker_heartbeat('cap-test-a')$q$, '42501');
+select pg_temp.is('is_worker() false for customer A',  $q$select public.is_worker()::text$q$, 'false');
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000b1');
+select pg_temp.is('is_worker() false for customer B',  $q$select public.is_worker()::text$q$, 'false');
+select pg_temp.as_user('00000000-0000-4000-8000-0000000000c1');
+select pg_temp.is('is_worker() false for staff S',     $q$select public.is_worker()::text$q$, 'false');
+select pg_temp.expect('staff (authenticated non-worker) cannot claim',
+  $q$select * from public.claim_next_capture('cap-test-s')$q$, '42501');
+select pg_temp.is('staff still reads drawers (deny_worker policy inert for non-workers)',
+  $q$select (count(*) > 0)::text from public.drawer where id = '30000000-0000-4000-8000-0000000000a1'$q$, 'true');
+select pg_temp.as_user(null);
+select pg_temp.expect('anon still cannot claim',
+  $q$select * from public.claim_next_capture('cap-test-anon')$q$, '42501');
 
 select pg_temp.as_admin();
 select n, test, ok, detail from pg_temp._r order by n;

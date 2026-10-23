@@ -181,3 +181,111 @@ This change is schema-only and was verified on dev. Two steps are Sam's (§10):
 - applying both migrations to prod;
 - creating the worker user, which must wait until the EmployeesList worker-role change (§13.1)
   ships.
+
+---
+
+## Round 3: pilot decisions (Sam, 2026-10-23 01:05 MT; Todoist comment on 6hq97rWq8jpgwhHv)
+
+New file: `portal/supabase/migrations/20261023140000_pilot_decisions.sql`. The two earlier
+migrations are unchanged. Evidence moved here from the repo root (`git mv`, following the PR #40 convention).
+
+| Decision | | Evidence |
+|---|---|---|
+| **Q1 (a)**: the worker uses the service-role key for the pilot | ✓ | `is_worker()` = `coalesce(auth.role(), '') = 'service_role' or <worker user_roles row>`. `auth.role()` reads the same claims (`request.jwt.claim.role` / `request.jwt.claims->>'role'`) that `auth.uid()` reads. Tests 113–122. |
+| `auth.uid()` is null under service_role | ✓ | Only one write path depends on it: `capture_worker.auth_user_id` in `claim_next_capture` and `worker_heartbeat`. That column was **NOT NULL**, so a service_role claim or heartbeat raised 23502. **Fix: expand-only relaxation** `alter table public.capture_worker alter column auth_user_id drop not null`. A null value means "service-role caller, no auth user". Nothing reads the column: `get_capture_queue` does not expose it, and a grep of portal/src and planning finds no reader. The claim and heartbeat bodies are therefore **unchanged**. Other places checked: `timings.attempts` entries on worker paths carry `worker_id` (the `p_worker_id` text), never `auth.uid()`. `attempts.by` (requeue/cancel) and `capture.created_by` (create_capture) are written only by staff/customer RPCs. `complete_capture`, `fail_capture` and `_reap_stale_captures` never read `auth.uid()`. Tests 119 and 120. |
+| service_role has EXECUTE on the 4 worker RPCs | ✓ | Explicit additive `grant execute ... to service_role` on claim/heartbeat/complete/fail. The schema's default privileges already gave it (dev `proacl` before the change: `service_role=X/postgres`); the grant pins it. Test 122. |
+| `deny_worker` policies untouched; `is_worker()` still false for every authenticated non-worker | ✓ | No policy DDL. For an `authenticated` request the role claim is `authenticated`, so the new disjunct is false. Tests 123–130: A, B and staff `is_worker()` = false; A and staff cannot claim (42501); A cannot heartbeat; staff still reads drawers; anon cannot claim. Pre-existing tests 26 and 36 (worker true / A false) still pass. |
+| **Q4 declined**: no bridge advance in `complete_capture` | ✓ | The §5.3(b) block (20261023120000 l.518–523, `update drawer set status = 'created_by_user' where stage = 'backlog'`) is removed. Everything else is byte-identical: a `diff` against the 20261023120000 body shows only that block removed plus one comment line extended. Lock order (capture → drawer → capture_worker), the attempt_count fence, replay, fill-if-empty and the photo-wins rule are all unchanged. Dev `pg_get_functiondef(complete_capture)` contains no `created_by_user` (strpos 0). Tests 66, 106 and 121. |
+| Expand-only, byte-exact | ✓ | One NOT NULL relaxed, plus body-only `create or replace` with the same signatures and return types. File md5 = dev history md5 = `000c2b409c2c7d701fdb95b42d90aef7`. Header present, no trailing newline. |
+| Typecheck | ✓ | `cd portal && npm run typecheck`: `tsc --noEmit` exits 0. portal/src is untouched, so no build. |
+
+### Dev apply (and a re-apply, disclosed)
+The first draft (md5 `bc025c616b9071552e233cbc7f4a8b7c`) kept NOT NULL and wrote a nil-uuid
+sentinel via `coalesce(auth.uid(), '0000…')` in replaced claim and heartbeat bodies. It was applied
+to dev and passed 130/130. The coordinator then asked for the NOT NULL relaxation instead. To keep
+dev history byte-faithful to the final file, I took these steps:
+1. In one transaction on dev, re-ran `is_worker`, `claim_next_capture` and `complete_capture` from
+   20261023120000 and `worker_heartbeat` from 20261023130000, then deleted the dev
+   `schema_migrations` row `20261023140000`. Verified afterwards: history row count 0, `is_worker`
+   has no `service_role`, `complete_capture` has the status write again, and `auth_user_id`
+   `is_nullable = NO`.
+2. Applied the final file. Nothing was ever applied to prod.
+```
+$ python3 tools/db_apply.py portal/supabase/migrations/20261023140000_pilot_decisions.sql --env dev
+Applied 20261023140000_pilot_decisions.sql to dev (gfkrebuioszsxanjdnsx). History md5 verified: 000c2b409c2c7d701fdb95b42d90aef7.
+$ md5 -q portal/supabase/migrations/20261023140000_pilot_decisions.sql
+000c2b409c2c7d701fdb95b42d90aef7
+$ python3 tools/db_apply.py --check --env dev
+  20260910175336 admin_cleanup_controls                        LOCAL ONLY — not applied to dev
+  20260910175529 admin_order_detail_drawer_state               LOCAL ONLY — not applied to dev
+DIVERGED: 57 local file(s), 55 row(s) on dev; 26 byte-verified, 29 recorded without byte-faithful content.
+```
+Byte-verified rose from 25 to 26; the new one is 20261023140000. The only divergences are the two
+known pre-existing 20260910* LOCAL ONLY entries. A direct history query on dev
+(`md5(array_to_string(statements, E';\n'))`) gives `20261023140000 pilot_decisions
+000c2b409c2c7d701fdb95b42d90aef7`.
+
+Spot-checks on dev:
+- `pg_get_functiondef('public.is_worker()')`:
+  `select coalesce(auth.role(), '') = 'service_role' or exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'worker');`
+- `pg_get_functiondef(complete_capture)`: `strpos('created_by_user') = 0`; the new Q4 comment sits at
+  offset 2180; the definition md5 is `8bb9b244ccf3534bc915c4a8cd2d64b0`.
+- `information_schema.columns`: `capture_worker.auth_user_id` `is_nullable = YES`.
+
+### Tests (full suite)
+```
+$ python3 tools/db_test.py portal/supabase/tests/remote_capture_rls_test.sql
+130/130 passed on dev (gfkrebuioszsxanjdnsx).
+```
+Test file md5: `e372c95483521814e72819d420168d79`. The run rolled back. Residue check afterwards:
+- 0 captures, 0 capture_worker rows, 0 scan_frames objects;
+- 0 `cap-test` auth users, 0 `cap-test` drawers.
+
+Changed tests:
+- **test 66** now reads "stage unchanged on complete". dA (backlog, `backlogged_by_admin`) stays
+  `backlog backlogged_by_admin` with 0 stage events leaving backlog. It ran red against the old body
+  (`scanned created_by_user`, 2 events) before the apply.
+- **test 106** now reads "stage unchanged on complete". dA4 stays `backlog created_by_user ready`.
+
+New tests (112–130):
+- 112: fixture, capture a6 on dA.
+- 113: under service_role, `is_worker()` = true and `auth.uid()` is null.
+- 114: claim a6 as attempt 1.
+- 115: heartbeat on a live claim returns true.
+- 116: an idle heartbeat returns true.
+- 117: complete returns done.
+- 118: a stale attempt fails with 40001 (the fence holds).
+- 119: the `capture_worker` rows are written for `cap-test-sr` and `cap-test-sr2`, with
+  `auth_user_id` **null**, the version recorded, and the claim cleared.
+- 120: a6 has `attempt_count` 1 and `worker_id` `cap-test-sr`. One `done` attempt is audited with
+  `worker_id`, and the attempt has no `by` key.
+- 121: dA stays backlog and keeps its earlier photo (fill-if-empty); `capture_state` is ready.
+- 122: service_role has EXECUTE on all four RPCs.
+- 123–130: the negative cases listed above.
+
+Before the apply, tests 66 and 113–121 were red and the rest were green.
+
+Simulation: `set_config('role','service_role')` with `request.jwt.claims = {"role":"service_role"}`
+and no `sub`, which is how PostgREST sets up a service-key request.
+
+### Prod command for Sam (the third one, after the two above, in order)
+```
+python3 tools/db_apply.py portal/supabase/migrations/20261023140000_pilot_decisions.sql --env prod --approved
+```
+It needs no `--reload-postgrest`: no function is added or renamed, only replaced, and the column
+change does not alter any RPC signature.
+
+### Notes for Sam / reviewer
+- **Service role and `auth.uid()`.** Under service_role, `auth.uid()` is null, so the original
+  migration would have failed the worker's first claim with 23502 (`capture_worker.auth_user_id NOT
+  NULL`). Nothing else on the worker path depends on it.
+- **Who can be a worker now.** `is_worker()` trusts the JWT role claim. Any holder of the service-role
+  key is a worker (and more) for the pilot. A forged `role` claim requires the JWT secret.
+- **Contract amendments.** §5.3 (option (b) withdrawn, so `scanned` = customer confirm) and §3.5/§6
+  (a service_role worker; `auth_user_id` nullable) need updating in the contract doc.
+- **Rescinding Q1 (a) after the pilot.** Revert the `is_worker()` body and backfill
+  `capture_worker.auth_user_id` before any `set not null`.
+
+### Hardware sign-off needed: no
+Under Q1 (a) the worker authenticates with the existing service-role key. No worker auth user and no
+Mac mini change is needed to verify this schema; dev covers it.
