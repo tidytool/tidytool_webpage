@@ -19,6 +19,7 @@ import json
 import os
 import sys
 
+sys.dont_write_bytecode = True  # importing db_apply must not leave tools/__pycache__ behind
 sys.path.insert(0, os.path.dirname(__file__))
 import db_apply  # noqa: E402  (shared token + Management API query helper)
 
