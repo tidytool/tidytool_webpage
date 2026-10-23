@@ -226,6 +226,16 @@ The server owns `attempts`. A caller's `p_timings` is stored under `client` when
 caller therefore can never overwrite the audit trail. Queue wait is derived as
 `claimed_at − created_at` and is not stored.
 
+**As built (T2-L2 worker, tidyCAM `agent/6hq6FjwcM73J7FWc-worker-queue`): extra `worker` keys.**
+Besides the keys above, the worker sends:
+- `detail_requested`, `worker_id`, `fell_back`, `frame_count`, `input_bytes`, `outputs`,
+  `host_model`;
+- `aborted` (`timeout` | `shutdown`);
+- `reconstruct_attempts`: the worker-local list of detail levels tried.
+
+`detail` is null when reconstruction failed at every level. The worker never sends `attempts`;
+the server owns that list.
+
 **As built (T2-L1, #39): `attempts[].outcome` values.** Every entry carries `attempt`, `worker_id`,
 `claimed_at` and `ended_at`, plus:
 
@@ -476,7 +486,10 @@ scan_frames/
   `width`, `height`, `focal_length_*`), which the worker may use for integrity checks.
 - **Listing check:** the worker compares `frames[]` with the listed
   `frames/frame_NNNN.{jpg,heic}` objects under `<drawer_id>/<capture_id>/`, excluding
-  `manifest.json` and `.json` sidecars. Names are 4-digit, 1-based and contiguous.
+  `manifest.json` and `.json` sidecars. Names are 4-digit, 1-based and contiguous (the app's
+  guarantee; the worker does not enforce contiguity). The rule is **every manifest frame is
+  listed**: extra listed objects are ignored, and `manifest.frame_count` must equal the claimed
+  `frame_count`. A manifest with `schema_version` > 1 fails as `worker_error` (§7.1).
 - The worker treats a mismatch between the manifest and the listing as `insufficient_frames` (§7.1).
 - Objects are **immutable**: no client role has UPDATE or DELETE.
 - **The prefix is open for writing only before `create_capture`.** The insert policy (§4.2) rejects
@@ -1191,6 +1204,20 @@ Every `failed` capture, whatever the code, shows the customer **"Rescan needed"*
 **Decision (proposed):** the server, not the caller, decides retryability. Input problems are
 final at once, because retrying the same frames cannot help. Infrastructure problems retry.
 
+**As built (T2-L2 worker): how worker conditions map to codes.**
+
+| Worker condition | Reported as |
+|---|---|
+| Heartbeat returns `false`, or `40001` persists on `complete_capture` | **nothing**: the claim is lost; log and drop |
+| Local wall-clock cap hit, or SIGTERM | `worker_error`, with `timings.worker.aborted = timeout \| shutdown` (`timeout` and `worker_lost` stay server-only) |
+| Manifest missing or unreadable; manifest frame not listed; fewer than 20 frames | `insufficient_frames` |
+| `frame_details` sha256/bytes mismatch; tiny or unreadable frame | `bad_frames` |
+| Manifest `schema_version` > 1 | `worker_error` (fix = worker upgrade + staff requeue, not a rescan) |
+| `frames_prefix` mismatch; unsupported host | `worker_error` |
+| Frame listed but 404 on download; any list/download transport error; Storage "Bucket not found" | `download_failed` |
+| Output upload error, including 413 payload too large (pending Sam: ship ortho with `model_url` null?) | `upload_failed` |
+| PostgREST 5xx / 429 / `40001` / `40P01` | retried in-call with jittered backoff before any report |
+
 ### 7.2 Stale claims, retry cap and timings
 
 | Parameter | Value (**Decision (Sam, 2026-10-23)**, Q7: accepted as tunable config) |
@@ -1210,6 +1237,8 @@ dependency.
   Otherwise it becomes `failed` (`retries_exhausted`).
 - **Worker restarts:** a worker that restarts and claims again also reaps anything still held under
   its own `worker_id`. A crash mid-capture therefore costs one attempt, not a 3-minute wait.
+  **Never run a `--once` smoke run under the daemon's id**: it would reap and steal the live
+  claim. Use a throwaway id (e.g. `smoke-<date>`) and delete its `capture_worker` row afterwards.
 - **Rule for that to be safe:** one `worker_id` must equal exactly one worker process. Two
   concurrent processes on the Mac mini need two ids (`mini-1`, `mini-2`).
 - **No worker running:** nothing is reaped, and nothing could be processed anyway. The admin queue
@@ -1371,9 +1400,12 @@ It does **not** call `get_my_drawers()` and has no capture code.
   - `worker_heartbeat`, `complete_capture` and `fail_capture`.
 - **Loop:**
   1. Claim. If the queue is empty, sleep 10 s.
-  2. Fetch the manifest and validate it against the listing. On a mismatch, report
-     `fail_capture('insufficient_frames')`.
-  3. Start a 30 s heartbeat. If a beat returns `false`, abort immediately and discard.
+  2. Start a 30 s heartbeat at claim time, before validation. If a beat returns `false`, abort
+     immediately and discard. Cancelled heartbeat tasks are awaited before the next report or
+     claim.
+  3. Fetch the manifest and validate it against the listing (§4.1). On a mismatch, report
+     `fail_capture('insufficient_frames')`, using the §7.1 worker mapping. The reconstruct
+     fallback chain is `.full → .medium`.
   4. Reconstruct. `timings.json` becomes `p_timings`.
      - **Nothing here is on any main branch yet.** A `tidycam-worker` CLI that writes
        `model.usdz`, `ortho.png` and `timings.json` exists only on the **unmerged** tidyCAM branch
