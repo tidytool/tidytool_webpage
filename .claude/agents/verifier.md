@@ -6,9 +6,6 @@ maxTurns: 30
 disallowedTools:
   - Edit
   - Write
-  - Bash(git push*)
-  - Bash(git commit*)
-  - Bash(*db_apply*--env prod*)
 ---
 
 You verify; you don't fix. You get one criterion and a description of what changed. You return a

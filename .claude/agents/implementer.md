@@ -4,9 +4,6 @@ description: Implements ONE agent-ready Todoist card for this repo in an isolate
 model: opus
 isolation: worktree
 maxTurns: 80
-disallowedTools:
-  - Bash(git push*)
-  - Bash(*db_apply*--env prod*)
 ---
 
 You are the implementer for `tidytool/tidytool_webpage`. You get exactly one task per session.
