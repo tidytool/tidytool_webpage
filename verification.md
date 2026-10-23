@@ -1,136 +1,124 @@
 # verification.md — T2-L0 remote reconstruction contract (Todoist 6hq6FjvcjFjVfXfv)
 
-**Deliverable:** `planning/remote-reconstruction-contract.md`, a docs-only change.
+**Deliverable:** `planning/remote-reconstruction-contract.md`. This is a docs-only change.
 
-**Done when** (card): the doc is merged to main in tidytool_webpage and Sam has reviewed it.
-That is a **human gate**. This branch delivers the doc ready for that review. It is ✗ until Sam
-reviews and merges, by design.
+**Done when** (card): the doc is merged to main in tidytool_webpage and Sam has reviewed it. That
+is a **human gate**. This branch delivers the doc ready for that review, so the item stays ✗ until
+Sam reviews and merges it. That is by design.
 
 **Plan comment:** posted to the Todoist card (comment id `6hq8Vf26fhV3w7cM`).
 
-**Worktree note:** the dispatcher named
-`.claude/worktrees/6hq6FjvcjFjVfXfv-contract`, branch
-`agent/6hq6FjvcjFjVfXfv-remote-reconstruction-contract`. This implementer session's file writes are
-harness-restricted to `.claude/worktrees/agent-a84ceaeb7d4fcfd20`, branch
-`worktree-agent-a84ceaeb7d4fcfd20`. Both branches start at the same base, `744015f`.
-
-- All commits are on `worktree-agent-a84ceaeb7d4fcfd20`.
-- The `agent/…` branch is untouched at `744015f`.
-- To land the commits on the intended branch:
-  `git -C .claude/worktrees/6hq6FjvcjFjVfXfv-contract merge --ff-only worktree-agent-a84ceaeb7d4fcfd20`
+**Branch:** the commits are made in worktree `.claude/worktrees/agent-a84ceaeb7d4fcfd20` on
+`worktree-agent-a84ceaeb7d4fcfd20`. The coordinator fast-forwards
+`agent/6hq6FjvcjFjVfXfv-remote-reconstruction-contract` to that tip. The `agent/` branch carried
+the round-0 commits through `be7eff1`, and the round-1 commits sit on top.
 
 ## Scope items → doc section
 
-Line numbers refer to `planning/remote-reconstruction-contract.md` at commit `3ea3b13`.
+Line numbers refer to `planning/remote-reconstruction-contract.md` as of review round 1.
 
 | # | Card / dispatcher scope item | ✓/✗ | Where (section, line) |
 |---|---|---|---|
-| 1 | `capture` table shape: all 12 card columns, `source` device\|worker, `status` queued\|processing\|done\|failed | ✓ | §3.1 (l.125): column table plus target SQL. Extras are marked "proposed". |
-| 2 | `scan_frames` bucket paths, private, owner-write | ✓ | §4.1 (l.346) bucket and path convention. §4.2 (l.375) read/write matrix per prefix plus policies (insert-only as owner; no update or delete). |
-| 3 | `claim_next_capture()` with FOR UPDATE SKIP LOCKED | ✓ | §6 table (l.559). §6.1 SQL (l.583ff, `limit 1 for update skip locked`). |
-| 4 | `worker_heartbeat` | ✓ | §3.3 (l.219) `capture_worker`. §6 / §6.1 RPC. §7.2 (l.994) cadence. |
-| 5 | `drawer.capture_state` column, NOT new tracker stages | ✓ | §3.4 (l.239), with the guard trigger making it RPC-only. §5.2 (l.502) and §5.3 (l.524): no `status_def` codes, never touches stage/state. |
-| 6 | Capture state machine; `capture_state` on each transition | ✓ | §5.1 (l.465) normative transition table T1–T11, with the `capture_state` column. |
-| 7 | Failure → customer sees "Rescan needed" | ✓ | §3.4 mapping table. §7.1 (l.971) error codes. §7.3 (l.1019) per-party view. |
-| 8 | Stale-claim recovery (heartbeat timeout → requeue or fail, retry cap) | ✓ | §7.2 (l.994). `_reap_stale_captures` SQL in §6.1. |
-| 9 | Idempotency of claim / complete | ✓ | §8 (l.1033), with `attempt_count` fencing. |
-| 10 | Which RPCs mediate `capture_state`, and who may call them | ✓ | §6 table (caller column). §5.1 (caller column). Guard trigger in §3.4. |
-| 11 | Storage path convention, plus who reads/writes each prefix | ✓ | §4.1, §4.2, §4.3 (l.428): outputs in the existing buckets/paths. |
-| 12 | Signed-URL note (key caches on the object path, never the token URL) | ✓ | §4.4 (l.448). |
-| 13 | Consumer: tidyCAM | ✓ | §9.1 (l.1056) |
-| 14 | Consumer: Mac mini worker | ✓ | §9.2 (l.1086) |
-| 15 | Consumer: portal | ✓ | §9.3 (l.1117) |
-| 16 | Consumer: tidyCAD, incl. the pixel-vs-normalized corner gotcha | ✓ | §9.4 (l.1137). §5.2 rule 2. §2 grounding. |
-| 17 | Expand-only rollout note | ✓ | §10 (l.1164): additive migration, rollback, dev verification checklist. |
-| 18 | Illustrative SQL marked as target shape, not applied | ✓ | 7 markers (`TARGET SHAPE — not applied` / "Target-shape SQL (not applied)"). The intro states nothing is applied. |
-| 19 | "Decision (proposed)" markers plus "Open questions for Sam" | ✓ | 17 markers. §12 (l.1245) has 12 questions. |
-| — | Done-when: merged to main and Sam reviewed | ✗ (human gate) | Needs reviewer, then PR, then Sam. |
+| 1 | `capture` table shape: all 12 card columns, `source` device\|worker, `status` queued\|processing\|done\|failed | ✓ | §3.1 (l.127): column table plus target SQL. The extras are marked "proposed". |
+| 2 | `scan_frames` bucket paths, private, owner-write | ✓ | §4.1 (l.374): bucket, path convention, closed-after-create rule. §4.2 (l.415): read/write matrix and policies. |
+| 3 | `claim_next_capture()` with FOR UPDATE SKIP LOCKED | ✓ | §6 table (l.656). §6.1 SQL (`limit 1 for update skip locked`). |
+| 4 | `worker_heartbeat` | ✓ | §3.3 (l.228). §6 and §6.1. §7.2 (l.1121). |
+| 5 | `drawer.capture_state` column, NOT new tracker stages | ✓ | §3.4 (l.248) with the guard trigger. §5.2 (l.551) and §5.3 (l.593). |
+| 6 | Capture state machine; `capture_state` on each transition | ✓ | §5.1 (l.514), transitions T1–T11. |
+| 7 | Failure → customer sees "Rescan needed" | ✓ | §3.4. §5.2 rule 4. §7.1 (l.1098). §7.3 (l.1146). |
+| 8 | Stale-claim recovery (heartbeat timeout → requeue or fail, retry cap) | ✓ | §7.2. `_reap_stale_captures` in §6.1. |
+| 9 | Idempotency of claim and complete | ✓ | §8 (l.1160): fencing plus lock order. |
+| 10 | Which RPCs mediate `capture_state`, and who may call them | ✓ | §6 table and §5.1 caller column. Guard trigger in §3.4. |
+| 11 | Storage path convention; who reads and writes each prefix | ✓ | §4.1, §4.2, §4.3 (l.477). |
+| 12 | Signed-URL note | ✓ | §4.4 (l.497). |
+| 13–16 | Consumers: tidyCAM, worker, portal, tidyCAD (incl. pixel vs normalized corners) | ✓ | §9.1 (l.1198), §9.2 (l.1243), §9.3 (l.1278), §9.4 (l.1308). |
+| 17 | Expand-only rollout | ✓ | §10 (l.1350). |
+| 18 | SQL marked as target shape, not applied | ✓ | `TARGET SHAPE — not applied` markers, plus the §6.1 heading. |
+| 19 | "Decision (proposed)" markers and "Open questions for Sam" | ✓ | 18 markers. §12 (l.1456), 13 questions. §13 (l.1532), follow-up cards. |
+| — | Done-when: merged to main and Sam reviewed | ✗ (human gate) | — |
+
+## Review round 1: fixes
+
+| Item | ✓ | Fix and where |
+|---|---|---|
+| MUST 1: on-device rescan leaves stale "Rescan needed" | ✓ | Rule (b) chosen as **Decision (proposed)**. §5.2 rule 4: the customer chip is derived server-side in `get_my_capture_status().display_state` and is suppressed once `photo_url` exists. It cites tidyCAM's direct `photo_url` write (`supabase_order_service.dart` ≈l.278, `feature/release-1.7.1`). §9.1 states that the on-device path does not create captures. Q2 is rewritten from "optional" to (b) recommended vs (a) alternative. §10 "zero changes" is scoped to the existing on-device-only path. §7.3 customer row updated. |
+| MUST 2: `error` / `timings` exposed to the creator | ✓ | §3.1 SQL: column-level `grant select (…)` without `error`, `timings`, worker or attempt columns (l.193), and `select=*` is refused by design. `create_capture` returns the narrow `table(capture_id, drawer_id, source, status, created_at)` (l.722). `get_my_capture_status` returns no error or timings. A §12 note marks this as resolved. |
+| MUST 3: §9 existence claims without merged citations | ✓ | §9.2: the `tidycam-worker` CLI is marked as existing only on the unmerged tidyCAM `agent/6hq8P84Xx6XWVPh6-worker-core`, with no claim, heartbeat or bucket I/O. §9.1: everything is new L-lane work unless cited, and listing via `get_my_drawers()` is new L1 work (tidyCAM does not call it). Citations now point to tidyCAM `origin/main` `supabase_order_service.dart` l.485/532/803, tidyCAD `origin/main` `photo_cache.py` l.51, `lidar.py` l.91–93 and `work_queue.py` l.40–41/62–65, and portal `page.tsx` l.254 and `EmployeesList.tsx` l.73–74/211/219. §2 names the checkouts the survey read. |
+| SHOULD 1: lock order / 40P01 | ✓ | `create_capture` reads the pointer unlocked, locks the predecessor capture, then the drawer, re-checks, and raises `40001` after 3 tries (l.782ff). §8 states the global order (capture before drawer) and makes `40001`/`40P01` retryable. A §10 dev check covers concurrent create plus complete. |
+| SHOULD 2: guard trigger vs FK `on delete set null` | ✓ | The guard allows `pg_trigger_depth() > 1` nulling only `current_capture_id`, and clears `capture_state` with it (l.302–310). §3.4 note on the FK cycle. §10 dev checks delete a drawer with captures and a capture row directly. |
+| SHOULD 3: bridge option for backlog→scanned | ✓ | §5.3 presents option (b), the `drawer_stage_bridge` legacy `status = 'created_by_user'` write (`20260727100000_status_backbone.sql` l.471–479), alongside option (a) `_capture_advance_stage`, with pros and cons. (b) is recommended for the pilot. Updated in the `complete_capture` comment, §6 table, §10 item 6 and Q4. |
+| SHOULD 4: worker user is Sam-only; email and EmployeesList | ✓ | §10: Sam creates the user on dev and prod. The email must not match `customer.email` (`link_customer_on_auth`, `20260704000000_durable_identity.sql` l.114–141). The user holds only the `worker` role, and is created only after the EmployeesList change ships. §9.3: EmployeesList change specified (worker badge, actions hidden, server actions refuse). Q13 and §13 card 1 added. |
+| SHOULD 5: tidyCAD Select on photo-less drawers | ✓ | §9.4: a required coordinated follow-up to guard Select while `photo_url is null`, citing `work_queue.py` l.40–41/62–65. §13 card 2. |
+| SHOULD 6: frame injection by org members after create | ✓ | `_can_capture_drawer_path` now also requires that no `capture` row exists for segment 2 and that no object under the prefix is owned by someone else (l.438ff). §4.1 rewrites the 409 note to pre-create only, and post-create uploads are refused. §4.2 row and §10 dev check updated. |
+| SHOULD 7: device-source URL checks | ✓ | `create_capture(source='device')` applies the same `/drawer-assets/<drawer_id>/` and `/lidar_scans/<drawer_id>/` checks as `complete_capture` (l.774). §10 dev check added. |
+| Also: open questions and follow-up list | ✓ | Q13 covers who creates and administers the worker user. Error visibility is resolved, not open. §13 lists coordinated follow-up cards (EmployeesList, tidyCAD Select guard, worker CLI queue I/O, tidyCAM remote capture plus listing, tidyCAM device captures if rule (a), worker-user runbook). |
 
 ## Diff touches only the doc and verification.md
 
-`git diff --stat origin/main` before this file was added:
+`git diff --stat origin/main` at the round-1 tip:
 
 ```
- planning/remote-reconstruction-contract.md | 1291 ++++++++++++++++++++++++++++
- 1 file changed, 1291 insertions(+)
+ planning/remote-reconstruction-contract.md | 1553 +++++++++++++++
+ verification.md                            |  (this file)
+ 2 files changed
 ```
 
-After this commit the only addition is `verification.md` at the repo root.
-
-- No file under `portal/` changed, including `portal/supabase/migrations/`.
-- No file under `docs/` changed.
-- No migration was written or applied (dev or prod).
-- No code changed and no dependency was added.
+- No file under `portal/` or `docs/` changed.
+- No migration was written or applied, on dev or prod.
+- No code changed, and no dependency was added.
 
 ## Everything the doc cites as existing actually exists
 
-Produced by a grep script over `portal/supabase/migrations/*.sql` plus file checks. It ran in this
-worktree; output excerpt:
+Round 0: a grep script over `portal/supabase/migrations/*.sql` plus file checks. Every cited object
+was found, and every new name has zero hits, so there is no clash. The excerpt is kept from the
+round-0 run:
 
 ```
-OK      drawer table (id uuid NOT NULL, no default)  <-  20260628062931_remote_schema.sql:48
-OK      drawer.photo_url / point_cloud_url  <-  20260628062931_remote_schema.sql:57
-OK      is_admin()  <-  20260628062931_remote_schema.sql:26
-OK      is_staff()  <-  20260715191252_staff_role_drawer_access.sql:12
-OK      user_roles_role_check (admin,user,staff)  <-  20260715191252_staff_role_drawer_access.sql:9
-OK      policy drawers select / drawers update / drawer_insert_authenticated  <-  20260628062931_remote_schema.sql:138/139/131
-OK      policy drawer_select_staff / drawer_update_staff  <-  20260715191252_staff_role_drawer_access.sql:27/29
-OK      status_def / status_transition  <-  20260727100000_status_backbone.sql:37/86
-OK      status_event (+source check)  <-  20260727100000_status_backbone.sql:140
-OK      record_status_event()  <-  20260727100000_status_backbone.sql:254
-OK      drawer_stage_bridge() insert default  <-  20260727100000_status_backbone.sql:448
-OK      set_drawer_stage() / set_drawer_state()  <-  20260727100000_status_backbone.sql:582/647
-OK      set_order_state() / set_order_override()  <-  20260727100000_status_backbone.sql:681/708
-OK      get_order_tracker() / get_work_queue() / get_status_pipeline()  <-  20260727100000_status_backbone.sql:762/855/891
-OK      drawer in supabase_realtime  <-  20260727100000_status_backbone.sql:173
-OK      get_my_drawers() v2 (customer join)  <-  20260706000000_portal_durable_model_and_admin.sql
-OK      _customer_can_see_drawer() (+ revoked from authenticated)  <-  20260803120000_customer_tool_labels.sql:66/486
-OK      get_my_label_status() / drawer_label deny-all  <-  20260803120000_customer_tool_labels.sql:449/40
-OK      storage policy drawer_assets_insert  <-  20260703220000_baseline_storage_policies.sql:34
-OK      storage policy "Allow authenticated uploads to lidar_scans"  <-  20260703220000_baseline_storage_policies.sql:61
-OK      capture_quality enum / set_capture_quality()  <-  20260721175633_…:6 / 20260721175808_…:4
-OK      drawer.claimed_by (design claim)  <-  20260812210000_drawer_claims_and_progress.sql
-OK      record_scan_correction()  <-  20260714040206_scan_correction_audit_rails.sql:47
+OK drawer table (id uuid NOT NULL, no default) <- 20260628062931_remote_schema.sql:48
+OK is_admin() <- 20260628062931_remote_schema.sql:26 · is_staff() <- 20260715191252_staff_role_drawer_access.sql:12
+OK user_roles_role_check <- 20260715191252_staff_role_drawer_access.sql:9
+OK drawers select/update, drawer_insert_authenticated <- 20260628062931_remote_schema.sql:138/139/131
+OK drawer_select_staff / drawer_update_staff <- 20260715191252_staff_role_drawer_access.sql:27/29
+OK status_def / status_transition / status_event source check <- 20260727100000_status_backbone.sql:37/86/140
+OK record_status_event / drawer_stage_bridge / set_drawer_stage / set_drawer_state <- 20260727100000_status_backbone.sql:254/448/582/647
+OK get_order_tracker / get_work_queue / get_status_pipeline <- 20260727100000_status_backbone.sql:762/855/891
+OK _customer_can_see_drawer (+revoked from authenticated) / get_my_label_status <- 20260803120000_customer_tool_labels.sql:66/486/449
+OK drawer_assets_insert / lidar_scans upload policy <- 20260703220000_baseline_storage_policies.sql:34/61
+OK capture_quality / set_capture_quality / drawer_claimed_by_idx / record_scan_correction
 NEW(ok) capture, capture_worker, capture_state, current_capture_id, scan_frames, claim_next_capture,
-        worker_heartbeat, create/complete/fail_capture, is_worker  (0 migration files mention them: no name clash)
-NEW(ok) is_approved()  (0 files; the doc correctly cites it as NOT yet existing)
-OK      planning/TIDYCAM-launch-coordination.md, planning/ARCHITECTURE.md, portal/supabase/migrations/README.md,
-        portal/src/components/LabelEditor.tsx:7 ("photo_url IS the ortho render"), portal/src/app/page.tsx:254
-        (rpc get_my_drawers), portal/src/app/admin/queue/page.tsx, portal/src/app/admin/employees,
-        tools/db_apply.py, .claude/team.json:41 (contract_globs "planning/*contract*.md")
+        worker_heartbeat, create/complete/fail_capture, is_worker, is_approved: 0 migration hits
 ```
 
-The sibling-repo facts (tidyCAM and tidyCAD storage paths, caches, corner conventions) come from a
-read-only survey of `/Users/sam/Documents/Development/tidyCAM` and `…/tidyCAD`, with file:line
-citations held by the implementer. Neither repo was modified.
+Round 1 added citations, each checked in this session:
 
-## Independent verifier pass
+- `link_customer_on_auth`: `20260704000000_durable_identity.sql` l.114–141 (read).
+- Legacy bridge: `20260727100000_status_backbone.sql` l.471–479 (read).
+- `portal/src/components/EmployeesList.tsx` l.73–74/211/219 (grep).
+- tidyCAM `origin/main` `lib/services/storage/supabase_order_service.dart` l.485/532/803 (`git grep origin/main`).
+- tidyCAM direct `photo_url` update ≈l.278 on `feature/release-1.7.1`, the local checkout (`sed`).
+- tidyCAM `agent/6hq8P84Xx6XWVPh6-worker-core` exists locally and on origin, and is unmerged
+  (`git branch -a`).
+- tidyCAM `origin/main` has no `get_my_drawers` call (`git grep`, 0 hits).
+- tidyCAD `origin/main` `tidytool/services/work_queue.py` l.40–41/62–65, `photo_cache.py` l.51 and
+  `lidar.py` l.91–93 (`git grep origin/main`, plus a read of `work_queue.py`).
 
-The `verifier` subagent read the full doc and returned **PASS** on:
+## Independent verifier pass (round 0)
 
-- all 12 card columns, with the exact status and source values;
-- every other scope item;
-- SQL labelled as target shape, with no migration files;
-- an SQL sanity read: SKIP LOCKED syntax is valid, and the check constraints are consistent with
-  T1–T11;
-- no raw status writes, and no `drawer_count`/`drawer_ids` change.
-
-It raised one non-blocking risk: the proposed `backlog → scanned` advance in §5.3 did not name a
-compliant writer. **Fixed in `3ea3b13`.** §5.3 now specifies the internal
-`_capture_advance_stage()`, a set_drawer_stage-equivalent with a single hard-coded sanctioned
-transition. It is called only from `complete_capture`, and `stage` is never raw-updated.
+The `verifier` subagent returned PASS on every scope item, the SQL sanity read, and the
+no-raw-status-write check. Its one risk, an unnamed stage writer in §5.3, was fixed in `3ea3b13`
+and extended in round 1 with option (b).
 
 ## Checks not run
 
-This is a docs-only change: no file under `portal/` changed. `npm run typecheck`, the
-`npm run test:*` suites and `npm run build` were not run because they cannot be affected. No dev
-server or browser walk-through applies.
+This is docs-only: nothing under `portal/` changed, so `npm run typecheck`, the `npm run test:*`
+suites and `npm run build` were not run, because they cannot be affected. No dev server or browser
+walk-through applies.
 
 ## Pre-existing failures
 
-None observed. None were looked for beyond the above, because no code was touched.
+None observed. None were looked for beyond the checks above, because no code was touched.
 
 ## Hardware sign-off needed: no
 
-This is a contract document. The lanes that implement it (tidyCAM upload, Mac mini worker) will
-need device sign-off in their own cards.
+This is a contract document. The implementing lanes (tidyCAM upload, the Mac mini worker) need
+device sign-off in their own cards.
