@@ -75,7 +75,10 @@
     "systems_engineer_lens": "opus"
   },
   "pr": {
-    "evidence_file": "verification.md",
+    "evidence_dir": "planning/runs/{card_id}/",
+    "evidence_file": "planning/runs/{card_id}/verification.md",
+    "review_file": "planning/runs/{card_id}/review.md",
+    "test_citation": "test N (never #N; GitHub autolinks it)",
     "trailer": "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
   }
 }

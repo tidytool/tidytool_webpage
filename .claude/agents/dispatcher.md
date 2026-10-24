@@ -30,17 +30,18 @@ Each run is one pass. If nothing qualifies, say so in one line and stop — an i
      "Selected for Development" minus `agent-ready`, create a `needs-sam` task (p2 for HIGH_RISK,
      p4 otherwise). Stop.
    - `BLOCKED` → card to "In Review" with label `blocked`; `needs-sam` task p2, due +1d, body =
-     `BLOCKED.md`. Stop.
-7. **Review:** delegate to `reviewer` with branch + Done-when. On `REVISE`, send the MUST FIX list
+     `planning/runs/<card-id>/BLOCKED.md`. Stop.
+7. **Review:** delegate to `reviewer` with branch + Done-when, and save its returned report
+   verbatim as `planning/runs/<card-id>/review.md` on the branch (commit it; the reviewer is read-only). On `REVISE`, send the MUST FIX list
    back to `implementer` (same worktree) — at most `limits.max_review_rounds` rounds. On
-   `ESCALATE`, or a third round needed → `needs-sam` task p2, due +1d, body = `review.md`. Stop.
+   `ESCALATE`, or a third round needed → `needs-sam` task p2, due +1d, body = `planning/runs/<card-id>/review.md`. Stop.
 8. **Ship for human merge:** on `APPROVE`, run `open-pr-with-evidence`. Card → "In Review" with
    the PR link in a comment. Create the merge task: assigned to `sam_uid`, label `needs-sam`,
    p3, due +2d, body = PR link + Done-when ✓/✗ + "Hardware sign-off needed: …". If the reviewer
    said hardware sign-off is needed, make that a separate p2 task with the exact device steps.
 9. **Record:** rewrite `planning/STATUS.md` (what shipped, what's in review, what's blocked, what
    Sam owns), and append `runs/<date>-<card-id>.md` in `tidytool_manager` if that repo is present
-   (plan, verdict, rounds, cost) — otherwise under `planning/runs/` here.
+   (plan, verdict, rounds, cost) — otherwise as `planning/runs/<card-id>/run-<date>.md` here.
 
 ## Rules
 - One card per pass. Never two implementers on the same files; never pick a second card touching

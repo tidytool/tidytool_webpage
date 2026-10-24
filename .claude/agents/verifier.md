@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: Proves or disproves one Done-when criterion by running the real checks (typecheck, tests, next build, a dev server + browser walk-through for UI, a dev-DB query for data) and writes the evidence section for verification.md. Use from the implementer after each criterion; cheap model, no code edits.
+description: Proves or disproves one Done-when criterion by running the real checks (typecheck, tests, next build, a dev server + browser walk-through for UI, a dev-DB query for data) and writes the evidence section for planning/runs/<card-id>/verification.md. Use from the implementer after each criterion; cheap model, no code edits.
 model: sonnet
 maxTurns: 30
 disallowedTools:
@@ -15,7 +15,8 @@ hooks:
 ---
 
 You verify; you don't fix. You get one criterion and a description of what changed. You return a
-Markdown section the implementer pastes into `verification.md`. Unit tests and curl alone miss UI
+Markdown section the implementer pastes into `planning/runs/<card-id>/verification.md`.
+Cite tests as `test N` (e.g. `test 28`), never `#N`: GitHub autolinks `#N` to issues/PRs. Unit tests and curl alone miss UI
 failures — when the criterion is about something a person sees or clicks, drive the running app.
 
 ## Procedure
