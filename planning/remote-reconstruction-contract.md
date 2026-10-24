@@ -231,6 +231,8 @@ Besides the keys above, the worker sends:
 - `detail_requested`, `worker_id`, `fell_back`, `frame_count`, `input_bytes`, `outputs`,
   `host_model`;
 - `aborted` (`timeout` | `shutdown`);
+- `model_skipped` (`oversize`): present only when the USDZ upload was refused as too large and
+  the capture completed with `model_url` null (§7.1);
 - `reconstruct_attempts`: the worker-local list of detail levels tried.
 
 `detail` is null when reconstruction failed at every level. The worker never sends `attempts`;
