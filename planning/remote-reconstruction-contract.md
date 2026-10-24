@@ -483,7 +483,11 @@ scan_frames/
 - **Additional keys are allowed; the worker ignores unknown keys.** `schema_version` (int) is
   reserved. tidyCAM's capture core (T2-L3a) also writes `state`, `dropped_duplicates`,
   `created_at`, `updated_at` and an optional `frame_details[]` (`path`, `sha256`, `bytes`,
-  `width`, `height`, `focal_length_*`), which the worker may use for integrity checks.
+  `width`, `height`, `focal_length_*`).
+- **`frame_details[]` is optional, but enforced when present** (T2-L2 as built). For each entry,
+  the worker checks the downloaded frame's `bytes` and `sha256` against it. A mismatch is
+  `bad_frames`, which is final: the customer sees "Rescan needed" (§7.1). The app must compute
+  these values from the exact files it uploads, after the manifest is frozen (§9.1).
 - **Listing check:** the worker compares `frames[]` with the listed
   `frames/frame_NNNN.{jpg,heic}` objects under `<drawer_id>/<capture_id>/`, excluding
   `manifest.json` and `.json` sidecars. Names are 4-digit, 1-based and contiguous (the app's
@@ -506,6 +510,9 @@ scan_frames/
   `create_capture`, uploads under that prefix are refused, whether the response is 403/RLS or 409.
   tidyCAM must finish every upload, the manifest included, before calling `create_capture`. A
   refused upload for an already-created capture is a client bug, not a retry case.
+- **Response shapes.** Supabase Storage may report a duplicate as plain HTTP 409, or as HTTP 400
+  whose body has `"statusCode":"409"`. It may likewise report an oversize object as HTTP 413, or
+  as HTTP 400 with `"statusCode":"413"`. Clients must accept both forms.
 
 ### 4.2 Who can read and write each prefix
 
@@ -1215,7 +1222,8 @@ final at once, because retrying the same frames cannot help. Infrastructure prob
 | Manifest `schema_version` > 1 | `worker_error` (fix = worker upgrade + staff requeue, not a rescan) |
 | `frames_prefix` mismatch; unsupported host | `worker_error` |
 | Frame listed but 404 on download; any list/download transport error; Storage "Bucket not found" | `download_failed` |
-| Output upload error, including 413 payload too large (pending Sam: ship ortho with `model_url` null?) | `upload_failed` |
+| Model (`.usdz`) upload refused as too large (413, or 400 with body `statusCode` 413) | **not a failure**: `complete_capture` with the ortho and `model_url` null; no retry and no rescan. **Decision (Sam, 2026-10-24)**; post-pilot: raise the `lidar_scans` cap or compress the USDZ |
+| Ortho too large; any other output upload error | `upload_failed` |
 | PostgREST 5xx / 429 / `40001` / `40P01` | retried in-call with jittered backoff before any report |
 
 ### 7.2 Stale claims, retry cap and timings
